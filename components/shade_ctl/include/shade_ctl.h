@@ -71,6 +71,23 @@ shade_action_t shade_go_to(shade_t *s, uint16_t target, uint32_t now_ms);
  * shade moves. Returns SHADE_ACT_STOP when an intermediate target arrives. */
 shade_action_t shade_tick(shade_t *s, uint32_t now_ms);
 
+/* --- HomeKit conversion -------------------------------------------------
+ *
+ * Careful: HomeKit WindowCovering counts the opposite way to this module.
+ * HomeKit uses whole percent with 100 = fully open and 0 = fully closed. We
+ * use hundredths with 0 = fully open and 10000 = fully closed. Every value
+ * that crosses the HomeKit boundary must go through these two functions.
+ */
+
+/* HomeKit PositionState values. */
+#define SHADE_HK_DECREASING 0 /* moves toward fully closed */
+#define SHADE_HK_INCREASING 1 /* moves toward fully open */
+#define SHADE_HK_STOPPED    2
+
+uint8_t  shade_to_hk_position(uint16_t position);
+uint16_t shade_from_hk_position(uint8_t hk_percent);
+uint8_t  shade_hk_position_state(const shade_t *s);
+
 #ifdef __cplusplus
 }
 #endif

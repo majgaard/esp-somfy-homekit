@@ -165,8 +165,85 @@ static void test_not_calibrated_until_a_limit_is_hit(void)
     ASSERT_TRUE(s.calibrated);
 }
 
+/* HomeKit counts the opposite way to this module. Pin both ends. */
+static void test_homekit_position_is_inverted(void)
+{
+    ASSERT_EQ(100, shade_to_hk_position(SHADE_OPEN));   /* open  -> 100 */
+    ASSERT_EQ(0,   shade_to_hk_position(SHADE_CLOSED)); /* closed -> 0  */
+    ASSERT_EQ(50,  shade_to_hk_position(5000));
+    ASSERT_EQ(75,  shade_to_hk_position(2500));
+    ASSERT_EQ(25,  shade_to_hk_position(7500));
+
+    ASSERT_EQ(SHADE_OPEN,   shade_from_hk_position(100));
+    ASSERT_EQ(SHADE_CLOSED, shade_from_hk_position(0));
+    ASSERT_EQ(5000,         shade_from_hk_position(50));
+    ASSERT_EQ(2500,         shade_from_hk_position(75));
+
+    /* Out-of-range input must clamp, not wrap. */
+    ASSERT_EQ(SHADE_OPEN, shade_from_hk_position(200));
+    ASSERT_EQ(0, shade_to_hk_position(60000));
+}
+
+static void test_homekit_position_round_trip(void)
+{
+    for (int pct = 0; pct <= 100; pct++) {
+        uint16_t internal = shade_from_hk_position((uint8_t)pct);
+        ASSERT_EQ(pct, shade_to_hk_position(internal));
+    }
+    /* Rounding must go to the nearest percent, never truncate toward closed. */
+    ASSERT_EQ(50, shade_to_hk_position(4951));
+    ASSERT_EQ(51, shade_to_hk_position(4949));
+}
+
+static void test_homekit_position_state(void)
+{
+    shade_t s;
+    uint32_t now = 1000;
+    shade_init(&s, &cfg, SHADE_OPEN);
+    s.last_ms = now;
+
+    ASSERT_EQ(SHADE_HK_STOPPED, shade_hk_position_state(&s));
+
+    shade_close(&s, now);
+    /* We close, so the HomeKit number falls. */
+    ASSERT_EQ(SHADE_HK_DECREASING, shade_hk_position_state(&s));
+
+    shade_stop(&s, now);
+    ASSERT_EQ(SHADE_HK_STOPPED, shade_hk_position_state(&s));
+
+    shade_open(&s, now);
+    ASSERT_EQ(SHADE_HK_INCREASING, shade_hk_position_state(&s));
+}
+
+/* End to end in HomeKit units: ask for 30% open and check we drive the right
+ * way and land on the right number. */
+static void test_homekit_target_drives_correct_direction(void)
+{
+    shade_t s;
+    uint32_t now = 1000;
+    shade_init(&s, &cfg, SHADE_OPEN); /* HomeKit reads 100 */
+    s.last_ms = now;
+    ASSERT_EQ(100, shade_to_hk_position(s.position));
+
+    /* 30% open is mostly closed, so the shade must go down. */
+    ASSERT_EQ(SHADE_ACT_DOWN,
+              shade_go_to(&s, shade_from_hk_position(30), now));
+    ASSERT_EQ(SHADE_ACT_STOP, run_for(&s, &now, 6000));
+    ASSERT_NEAR(30, shade_to_hk_position(s.position), 1);
+
+    /* 80% open is more open, so the shade must go up. */
+    ASSERT_EQ(SHADE_ACT_UP,
+              shade_go_to(&s, shade_from_hk_position(80), now));
+    ASSERT_EQ(SHADE_ACT_STOP, run_for(&s, &now, 6000));
+    ASSERT_NEAR(80, shade_to_hk_position(s.position), 1);
+}
+
 void run_shade_ctl_tests(void)
 {
+    RUN(test_homekit_position_is_inverted);
+    RUN(test_homekit_position_round_trip);
+    RUN(test_homekit_position_state);
+    RUN(test_homekit_target_drives_correct_direction);
     RUN(test_close_runs_to_limit_and_calibrates);
     RUN(test_open_runs_to_limit);
     RUN(test_go_to_half_stops);

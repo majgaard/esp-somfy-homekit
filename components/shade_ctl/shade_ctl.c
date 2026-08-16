@@ -92,6 +92,33 @@ shade_action_t shade_close(shade_t *s, uint32_t now_ms)
     return SHADE_ACT_DOWN;
 }
 
+uint8_t shade_to_hk_position(uint16_t position)
+{
+    if (position > SHADE_CLOSED) {
+        position = SHADE_CLOSED;
+    }
+    /* Round to the nearest whole percent, then flip the sense. */
+    return (uint8_t)(100u - ((position + 50u) / 100u));
+}
+
+uint16_t shade_from_hk_position(uint8_t hk_percent)
+{
+    if (hk_percent > 100) {
+        hk_percent = 100;
+    }
+    return (uint16_t)((100u - hk_percent) * 100u);
+}
+
+uint8_t shade_hk_position_state(const shade_t *s)
+{
+    switch (s->motion) {
+    /* We open, so the HomeKit number grows. */
+    case SHADE_MOTION_OPENING: return SHADE_HK_INCREASING;
+    case SHADE_MOTION_CLOSING: return SHADE_HK_DECREASING;
+    default:                   return SHADE_HK_STOPPED;
+    }
+}
+
 shade_action_t shade_go_to(shade_t *s, uint16_t target, uint32_t now_ms)
 {
     if (target > SHADE_CLOSED) {

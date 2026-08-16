@@ -90,3 +90,27 @@ it in software alone.
 Use one virtual remote address per shade. Cloning an existing remote instead
 would need a receive path to sniff its address and current rolling code, and
 would fight the real remote over the counter.
+
+## CC1101 setup for transmit
+
+Register values follow
+[LSatan/SmartRC-CC1101-Driver-Lib](https://github.com/LSatan/SmartRC-CC1101-Driver-Lib)
+(MIT), which is the driver ESPSomfy-RTS drives real Somfy motors with.
+
+| Register | Value | Why |
+| --- | --- | --- |
+| `FREQ2/1/0` | `10 AB 85` | 433.42 MHz at a 26 MHz crystal. Error is about 48 Hz. |
+| `MDMCFG2` | `0x30` | ASK/OOK, no sync word, no preamble. |
+| `FREND0` | `0x11` | `PA_POWER = 1`, so the PA swings between `PATABLE[0]` and `PATABLE[1]`. |
+| `PKTCTRL0` | `0x32` | Async serial, no CRC, no whitening, infinite length. |
+| `IOCFG0` | `0x0D` | Async serial data. In transmit the chip reads GDO0 as an input. |
+| `TEST0` | `0x09` | Correct above 430.5 MHz. |
+| `PATABLE` | `00 C0 00 ...` | Index 0 is carrier off, index 1 is carrier on at 10 dBm. |
+
+`PATABLE[0]` **must** stay at zero. If it does not, the carrier never switches
+off, the envelope carries no information, and the motor hears nothing.
+`test_patable_index_zero_is_off` pins this.
+
+The chip's own Manchester encoder stays off. Async transparent mode bypasses it,
+and `somfy_rts_build_pulses` already emits Manchester in the envelope. ESPSomfy
+does call `setManchester(1)`, but that setting is inert in this mode.
