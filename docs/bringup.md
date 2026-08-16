@@ -81,3 +81,19 @@ frames is about 27 ms.
 
 A logic analyser on GPIO10 works just as well and needs no radio at all. That
 verifies everything except the CC1101 itself.
+
+## Verified so far
+
+On 2026-08-15, with no CC1101 fitted:
+
+- Flashed over USB-C. The board enumerates as `/dev/cu.usbmodem*` with no
+  BOOT button needed.
+- RMT channel comes up on GPIO10 at 1 us resolution.
+- CC1101 correctly reports absent.
+- HAP database validates: 0 warnings, 0 errors. One bridge, three Window
+  Covering accessories.
+- Paired to Apple Home. Two controllers registered, one admin and one regular.
+- WiFi RSSI about -55 dBm, so the SuperMini antenna is adequate at this range.
+- `@S` and the HomeSpan `s` command both work over the serial console.
+
+Still unproven: everything that needs the radio.
