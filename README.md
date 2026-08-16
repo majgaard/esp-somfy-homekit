@@ -17,8 +17,8 @@ is unreliable. Native HAP needs no certificates and fits with room to spare.
 | `components/somfy_rts` — frame encode/decode, OOK envelope | done, tested on host |
 | `components/shade_ctl` — position model, HomeKit conversion | done, tested on host |
 | `components/cc1101` — register map, config, OOK setup | done, tested on host with a mock SPI |
-| `src/somfy_radio.cpp` — SPI glue, RMT envelope, rolling codes in NVS | written, compiles, untested on hardware |
-| `src/main.cpp` — HomeSpan bridge, three Window Covering tiles | written, compiles, untested on hardware |
+| `src/somfy_radio.cpp` — SPI glue, RMT envelope, rolling codes in NVS | RMT path verified on hardware; CC1101 path untested |
+| `src/main.cpp` — HomeSpan bridge, three Window Covering tiles | runs on hardware, HAP database validates clean |
 
 The three components need no hardware. The `src/` layer needs the board.
 

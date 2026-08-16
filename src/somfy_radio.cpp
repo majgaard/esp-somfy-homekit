@@ -114,6 +114,33 @@ bool somfy_radio_begin(void)
      * CC1101 access is header plus data in one frame. */
     SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, -1);
 
+    /* Bring the RMT channel up first. It does not depend on the CC1101, so it
+     * still gets verified on a board with no module fitted. */
+    rmt_tx_channel_config_t cc = {};
+    cc.gpio_num      = (gpio_num_t)PIN_GDO0;
+    cc.clk_src       = RMT_CLK_SRC_DEFAULT;
+    cc.resolution_hz = 1000000; /* 1 tick = 1 us */
+    /* Must be a multiple of SOC_RMT_MEM_WORDS_PER_CHANNEL, which is 48 on the
+     * ESP32-C3. One block buffers 96 pulses, far more than the ISR needs to
+     * keep ahead of a 640 us half-symbol. */
+    cc.mem_block_symbols = 48;
+    cc.trans_queue_depth = 4;
+
+    esp_err_t err = rmt_new_tx_channel(&cc, &s_chan);
+    if (err != ESP_OK) {
+        Serial.printf("[radio] RMT channel failed: %s\n", esp_err_to_name(err));
+        return false;
+    }
+
+    rmt_copy_encoder_config_t ec = {};
+    err = rmt_new_copy_encoder(&ec, &s_encoder);
+    if (err != ESP_OK) {
+        Serial.printf("[radio] RMT encoder failed: %s\n", esp_err_to_name(err));
+        return false;
+    }
+    rmt_enable(s_chan);
+    Serial.printf("[radio] RMT ready on GPIO%d, 1 us resolution.\n", PIN_GDO0);
+
     cc1101_cfg_t cfg = {};
     cfg.freq_hz = CC1101_SOMFY_HZ;
     cfg.xosc_hz = CC1101_XOSC_HZ_DEFAULT;
@@ -124,24 +151,6 @@ bool somfy_radio_begin(void)
         s_ok = false;
         return false;
     }
-
-    rmt_tx_channel_config_t cc = {};
-    cc.gpio_num          = (gpio_num_t)PIN_GDO0;
-    cc.clk_src           = RMT_CLK_SRC_DEFAULT;
-    cc.resolution_hz     = 1000000; /* 1 tick = 1 us */
-    cc.mem_block_symbols = 64;
-    cc.trans_queue_depth = 4;
-    if (rmt_new_tx_channel(&cc, &s_chan) != ESP_OK) {
-        Serial.println("[radio] RMT channel failed.");
-        return false;
-    }
-
-    rmt_copy_encoder_config_t ec = {};
-    if (rmt_new_copy_encoder(&ec, &s_encoder) != ESP_OK) {
-        Serial.println("[radio] RMT encoder failed.");
-        return false;
-    }
-    rmt_enable(s_chan);
 
     s_ok = true;
     Serial.println("[radio] CC1101 ready at 433.42 MHz.");
