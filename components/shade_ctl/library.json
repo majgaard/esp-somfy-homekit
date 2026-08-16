@@ -1,0 +1,11 @@
+{
+  "name": "shade_ctl",
+  "version": "0.1.0",
+  "build": {
+    "srcDir": ".",
+    "includeDir": "include",
+    "srcFilter": [
+      "+<*.c>"
+    ]
+  }
+}

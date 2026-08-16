@@ -17,10 +17,31 @@ is unreliable. Native HAP needs no certificates and fits with room to spare.
 | `components/somfy_rts` — frame encode/decode, OOK envelope | done, tested on host |
 | `components/shade_ctl` — position model, HomeKit conversion | done, tested on host |
 | `components/cc1101` — register map, config, OOK setup | done, tested on host with a mock SPI |
-| CC1101 platform glue — SPI and RMT wiring | not started, needs the board |
-| HomeSpan accessory layer | not started |
+| `src/somfy_radio.cpp` — SPI glue, RMT envelope, rolling codes in NVS | written, compiles, untested on hardware |
+| `src/main.cpp` — HomeSpan bridge, three Window Covering tiles | written, compiles, untested on hardware |
 
-No hardware is needed for anything that exists today.
+The three components need no hardware. The `src/` layer needs the board.
+
+## Requirements
+
+- **An Apple Home Hub** — a HomePod or an Apple TV. HomeSpan does not support
+  use without one. This is an Apple rule for HomeKit accessories, not a
+  HomeSpan limit.
+- PlatformIO. The official `platformio/espressif32` platform still ships
+  Arduino-ESP32 Core 2.x, and HomeSpan 2.1.8 needs 3.3.0 or later, so
+  `platformio.ini` pins the [pioarduino](https://github.com/pioarduino/platform-espressif32)
+  fork instead.
+
+## Build
+
+```
+pio run              # firmware
+pio run -t upload    # flash over USB-C
+pio device monitor   # console; @S for status, @P<n> to pair shade n
+```
+
+See [docs/bringup.md](docs/bringup.md) for the order to do things in once the
+CC1101 arrives.
 
 ## Test
 

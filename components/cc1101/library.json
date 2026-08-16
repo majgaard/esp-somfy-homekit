@@ -1,0 +1,11 @@
+{
+  "name": "cc1101",
+  "version": "0.1.0",
+  "build": {
+    "srcDir": ".",
+    "includeDir": "include",
+    "srcFilter": [
+      "+<*.c>"
+    ]
+  }
+}
