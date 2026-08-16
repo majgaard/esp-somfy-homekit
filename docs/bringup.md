@@ -98,17 +98,33 @@ On 2026-08-15, with no CC1101 fitted:
 
 Still unproven: everything that needs the radio.
 
-## Confirm the bottom end before you trust it
+## The bottom end is a timed stop, and that carries a risk
 
-`SHADE_CLOSE_IS_HARD_LIMIT` is set false, on the assumption that your chosen
-bottom position is **not** where the motor's own down limit sits. We therefore
-send Stop ourselves after 17.1 s.
+Confirmed on 2026-08-15: send Down and leave it, and the shade runs about a
+foot past the wanted position and knocks into furniture. There is no motor
+limit there, so `SHADE_CLOSE_IS_HARD_LIMIT` is false and we time the stop
+ourselves.
 
-Check this once the radio works. Send Down and let it run without our Stop. If
-the shade keeps going past your point, the assumption is right. If it halts
-exactly there, the motor has a limit and the flag should be true.
+RTS is one way. Nothing tells us the motor heard the Stop. **If a Stop is
+lost, the shade runs on into the furniture.** The repeats inside one
+transmission are the only defence: one command, one rolling code, five frames,
+so the motor only needs to decode any one of them.
 
-Getting it wrong the harmful way — flag true when there is no limit — makes the
-shade run to the motor's real limit. Getting it wrong the other way sends a
-Stop after the motor already halted, and an RTS motor reads that as "go to the
-favourite position".
+Do not paper over this by sending a second, separate Stop. A Stop that arrives
+after the motor already halted is read as "go to the favourite position", so
+the retry itself moves the shade.
+
+### The better fix: program the My position
+
+Somfy motors hold one favourite position per shade. If you set it to your
+wanted bottom position, two good things follow.
+
+1. We can drive the shade there with a single My command from a standstill.
+   The motor runs to the position and stops itself, exactly, with no timing on
+   our side and nothing to lose in the air. That end then becomes a hard limit
+   and re-calibrates the estimate.
+2. A stray or duplicated Stop becomes harmless, because "go to the favourite
+   position" is where we wanted the shade anyway.
+
+To set it: drive the shade to the wanted position with the existing remote,
+then hold MY for about 5 s until the shade jogs.
