@@ -32,12 +32,18 @@ typedef enum {
     SHADE_MOTION_CLOSING,
 } shade_motion_t;
 
-/* What the caller must send on the radio. */
+/* What the caller must send on the radio.
+ *
+ * STOP and FAVOURITE are the same My command on the air. The motor decides
+ * which one it is: My stops a shade that is moving, and sends a shade that is
+ * already stopped to its favourite position. The two names keep our intent
+ * clear, and remind the caller that ordering matters. */
 typedef enum {
     SHADE_ACT_NONE = 0,
     SHADE_ACT_UP,
     SHADE_ACT_DOWN,
     SHADE_ACT_STOP,
+    SHADE_ACT_FAVOURITE,
 } shade_action_t;
 
 typedef struct {
@@ -61,6 +67,23 @@ typedef struct {
     /* How early to send Stop, to cover the time the radio needs before the
      * motor acts on the first frame. Zero disables the compensation. */
     uint32_t stop_lead_ms;
+
+    /* Set true once the motor's favourite (My) position is programmed at the
+     * position we call fully closed. Closing then becomes a single My from a
+     * standstill: the motor drives itself there and stops itself, so there is
+     * no timing on our side and no Stop to lose in the air.
+     *
+     * This also makes every failure safe. A mistimed or duplicated My sends
+     * the shade to the favourite, which is exactly where we wanted it, rather
+     * than letting it run on into whatever is below.
+     *
+     * Implies close_is_hard_limit, and shade_init enforces that. */
+    bool close_uses_favourite;
+
+    /* Gap between the Stop and the follow-up My when a close interrupts a
+     * move. Must outlast the transmission, or the motor is still moving when
+     * the second My lands and simply stops again. */
+    uint32_t favourite_delay_ms;
 } shade_cfg_t;
 
 typedef struct {
@@ -72,6 +95,10 @@ typedef struct {
      * never accumulated tick by tick. */
     uint32_t       move_start_ms;
     uint16_t       move_start_pos;
+    /* A close interrupted a move, so a Stop went out and the My that means
+     * "go to the favourite" still has to follow. */
+    bool           favourite_pending;
+    uint32_t       favourite_at_ms;
     /* False until the shade drives into a hard limit. Before that the position
      * is a guess, because we cannot know where the shade sat at boot. */
     bool           calibrated;

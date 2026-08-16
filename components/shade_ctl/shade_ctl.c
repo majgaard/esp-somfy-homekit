@@ -13,6 +13,14 @@ void shade_init(shade_t *s, const shade_cfg_t *cfg, uint16_t assumed_position,
     s->move_start_ms  = now_ms;
     s->move_start_pos = assumed_position;
     s->calibrated     = false;
+    s->favourite_pending = false;
+    s->favourite_at_ms   = now_ms;
+
+    /* The motor parks itself at the favourite, so that end behaves exactly
+     * like one of its own limits. */
+    if (s->cfg.close_uses_favourite) {
+        s->cfg.close_is_hard_limit = true;
+    }
 }
 
 /* Derive the position from the time the move began, never from a running sum.
@@ -70,6 +78,18 @@ shade_action_t shade_tick(shade_t *s, uint32_t now_ms)
 {
     integrate(s, now_ms);
 
+    /* The Stop has gone out and the shade has had time to halt, so the My
+     * that means "go to the favourite" can follow now. */
+    if (s->favourite_pending) {
+        if ((int32_t)(now_ms - s->favourite_at_ms) >= 0) {
+            s->favourite_pending = false;
+            s->target            = SHADE_CLOSED;
+            begin_move(s, SHADE_MOTION_CLOSING, now_ms);
+            return SHADE_ACT_FAVOURITE;
+        }
+        return SHADE_ACT_NONE;
+    }
+
     if (s->motion == SHADE_MOTION_IDLE) {
         return SHADE_ACT_NONE;
     }
@@ -109,6 +129,7 @@ shade_action_t shade_tick(shade_t *s, uint32_t now_ms)
 shade_action_t shade_stop(shade_t *s, uint32_t now_ms)
 {
     integrate(s, now_ms);
+    s->favourite_pending = false; /* the user changed their mind */
     begin_move(s, SHADE_MOTION_IDLE, now_ms);
     s->target = s->position;
     return SHADE_ACT_STOP;
@@ -117,6 +138,7 @@ shade_action_t shade_stop(shade_t *s, uint32_t now_ms)
 shade_action_t shade_open(shade_t *s, uint32_t now_ms)
 {
     integrate(s, now_ms);
+    s->favourite_pending = false;
     s->target = SHADE_OPEN;
     begin_move(s, SHADE_MOTION_OPENING, now_ms);
     return SHADE_ACT_UP;
@@ -126,8 +148,25 @@ shade_action_t shade_close(shade_t *s, uint32_t now_ms)
 {
     integrate(s, now_ms);
     s->target = SHADE_CLOSED;
+
+    if (!s->cfg.close_uses_favourite) {
+        s->favourite_pending = false;
+        begin_move(s, SHADE_MOTION_CLOSING, now_ms);
+        return SHADE_ACT_DOWN;
+    }
+
+    /* My only means "go to the favourite" from a standstill. While the shade
+     * moves it just stops it, so stop now and send the real one after a gap. */
+    if (s->motion != SHADE_MOTION_IDLE) {
+        begin_move(s, SHADE_MOTION_IDLE, now_ms);
+        s->favourite_pending = true;
+        s->favourite_at_ms   = now_ms + s->cfg.favourite_delay_ms;
+        return SHADE_ACT_STOP;
+    }
+
+    s->favourite_pending = false;
     begin_move(s, SHADE_MOTION_CLOSING, now_ms);
-    return SHADE_ACT_DOWN;
+    return SHADE_ACT_FAVOURITE;
 }
 
 uint8_t shade_to_hk_position(uint16_t position)
@@ -170,6 +209,7 @@ shade_action_t shade_go_to(shade_t *s, uint16_t target, uint32_t now_ms)
     }
 
     integrate(s, now_ms);
+    s->favourite_pending = false; /* a new target replaces the pending close */
 
     int32_t diff = (int32_t)target - (int32_t)s->position;
     if (diff > -SHADE_DEADBAND && diff < SHADE_DEADBAND) {

@@ -36,7 +36,9 @@ struct SomfyShade : Service::WindowCovering {
         cfg.travel_close_ms     = SHADE_TRAVEL_CLOSE_MS;
         cfg.open_is_hard_limit  = SHADE_OPEN_IS_HARD_LIMIT;
         cfg.close_is_hard_limit = SHADE_CLOSE_IS_HARD_LIMIT;
-        cfg.stop_lead_ms        = SHADE_STOP_LEAD_MS;
+        cfg.stop_lead_ms          = SHADE_STOP_LEAD_MS;
+        cfg.close_uses_favourite  = SHADE_CLOSE_USES_FAVOURITE;
+        cfg.favourite_delay_ms    = SHADE_FAVOURITE_DELAY_MS;
         shade_init(&model, &cfg, shade_from_hk_position(current.getVal()),
                    millis());
     }
@@ -51,7 +53,10 @@ struct SomfyShade : Service::WindowCovering {
             somfy_send(idx, SOMFY_CMD_DOWN);
             break;
         case SHADE_ACT_STOP:
-            /* On an RTS motor the My button stops a shade that is moving. */
+        case SHADE_ACT_FAVOURITE:
+            /* Both are the same My command. The motor decides: it stops a
+             * shade that is moving, and sends a stopped one to its favourite
+             * position. shade_ctl is what guarantees the ordering. */
             somfy_send(idx, SOMFY_CMD_MY);
             break;
         default:

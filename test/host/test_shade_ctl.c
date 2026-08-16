@@ -308,8 +308,105 @@ static void test_no_lead_means_no_early_stop(void)
     ASSERT_NEAR(5000, s.position, 150);
 }
 
+/* With the motor's favourite programmed at our fully-closed position, closing
+ * becomes motor-managed: exact, and with nothing to lose in the air. */
+static shade_cfg_t favourite = {
+    .travel_open_ms       = 17900,
+    .travel_close_ms      = 17100,
+    .open_is_hard_limit   = true,
+    .close_is_hard_limit  = false, /* shade_init must force this true */
+    .stop_lead_ms         = 0,
+    .close_uses_favourite = true,
+    .favourite_delay_ms   = 1000,
+};
+
+static void test_favourite_implies_a_hard_close_end(void)
+{
+    shade_t s;
+    shade_init(&s, &favourite, SHADE_OPEN, 1000);
+    ASSERT_TRUE(s.cfg.close_is_hard_limit);
+}
+
+static void test_favourite_close_from_standstill(void)
+{
+    shade_t s;
+    uint32_t now = 1000;
+    shade_init(&s, &favourite, SHADE_OPEN, now);
+
+    /* One My, and the motor does the rest. No Down, no timed Stop. */
+    ASSERT_EQ(SHADE_ACT_FAVOURITE, shade_close(&s, now));
+    ASSERT_EQ(SHADE_ACT_NONE, run_for(&s, &now, 18000));
+    ASSERT_EQ(SHADE_CLOSED, s.position);
+    ASSERT_EQ(SHADE_MOTION_IDLE, s.motion);
+    /* The motor parked itself, so we know exactly where the shade is. */
+    ASSERT_TRUE(s.calibrated);
+}
+
+static void test_favourite_close_while_moving_stops_first(void)
+{
+    shade_t s;
+    uint32_t now = 1000;
+    shade_init(&s, &favourite, SHADE_CLOSED, now);
+
+    shade_open(&s, now);
+    run_for(&s, &now, 4000);
+
+    /* My on a moving shade only stops it, so that is all this can be. */
+    ASSERT_EQ(SHADE_ACT_STOP, shade_close(&s, now));
+    ASSERT_EQ(SHADE_MOTION_IDLE, s.motion);
+    ASSERT_TRUE(s.favourite_pending);
+
+    /* Nothing more until the shade has actually halted. */
+    ASSERT_EQ(SHADE_ACT_NONE, run_for(&s, &now, 900));
+    /* Then the real My follows. */
+    ASSERT_EQ(SHADE_ACT_FAVOURITE, run_for(&s, &now, 300));
+    ASSERT_TRUE(!s.favourite_pending);
+
+    ASSERT_EQ(SHADE_ACT_NONE, run_for(&s, &now, 18000));
+    ASSERT_EQ(SHADE_CLOSED, s.position);
+    ASSERT_TRUE(s.calibrated);
+}
+
+static void test_new_command_cancels_a_pending_favourite(void)
+{
+    shade_t s;
+    uint32_t now = 1000;
+    shade_init(&s, &favourite, SHADE_CLOSED, now);
+
+    shade_open(&s, now);
+    run_for(&s, &now, 4000);
+    ASSERT_EQ(SHADE_ACT_STOP, shade_close(&s, now));
+    ASSERT_TRUE(s.favourite_pending);
+
+    /* Change your mind before the follow-up goes out. */
+    ASSERT_EQ(SHADE_ACT_UP, shade_open(&s, now));
+    ASSERT_TRUE(!s.favourite_pending);
+    /* The My must never arrive late and drag the shade to the bottom. */
+    ASSERT_EQ(SHADE_ACT_NONE, run_for(&s, &now, 3000));
+    ASSERT_EQ(SHADE_MOTION_OPENING, s.motion);
+}
+
+static void test_favourite_reached_via_go_to_zero_percent(void)
+{
+    shade_t s;
+    uint32_t now = 1000;
+    shade_init(&s, &favourite, SHADE_OPEN, now);
+
+    /* "Close the blinds" in HomeKit is TargetPosition 0. */
+    ASSERT_EQ(SHADE_ACT_FAVOURITE,
+              shade_go_to(&s, shade_from_hk_position(0), now));
+    run_for(&s, &now, 18000);
+    ASSERT_EQ(0, shade_to_hk_position(s.position));
+    ASSERT_TRUE(s.calibrated);
+}
+
 void run_shade_ctl_tests(void)
 {
+    RUN(test_favourite_implies_a_hard_close_end);
+    RUN(test_favourite_close_from_standstill);
+    RUN(test_favourite_close_while_moving_stops_first);
+    RUN(test_new_command_cancels_a_pending_favourite);
+    RUN(test_favourite_reached_via_go_to_zero_percent);
     RUN(test_soft_close_end_sends_stop);
     RUN(test_hard_open_end_still_sends_nothing);
     RUN(test_stop_lead_fires_early);

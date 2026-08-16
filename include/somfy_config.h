@@ -42,4 +42,20 @@
  * once the radio is fitted. */
 #define SHADE_STOP_LEAD_MS 150
 
+/* Set true once the My position is programmed on every shade, at the position
+ * we call fully closed.
+ *
+ * Closing then becomes a single My from a standstill. The motor drives itself
+ * to that position and parks, so there is no timing on our side and no Stop
+ * that can be lost. "Close the blinds" cannot overshoot into the furniture.
+ *
+ * To program it: drive the shade to the wanted position with the existing
+ * remote, then hold MY for about 5 s until the shade jogs. Do all three, then
+ * flip this to true. */
+#define SHADE_CLOSE_USES_FAVOURITE false
+
+/* Gap between the Stop and the follow-up My when a close interrupts a move.
+ * Must outlast a transmission, which is about 700 ms. */
+#define SHADE_FAVOURITE_DELAY_MS 1200
+
 #endif /* SOMFY_CONFIG_H */
