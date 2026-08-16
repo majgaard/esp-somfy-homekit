@@ -3,9 +3,13 @@
 
 #define TRAVEL_MS 7000
 
+/* Both ends are motor limits, and no lead compensation. */
 static shade_cfg_t cfg = {
-    .travel_open_ms  = TRAVEL_MS,
-    .travel_close_ms = TRAVEL_MS,
+    .travel_open_ms      = TRAVEL_MS,
+    .travel_close_ms     = TRAVEL_MS,
+    .open_is_hard_limit  = true,
+    .close_is_hard_limit = true,
+    .stop_lead_ms        = 0,
 };
 
 /* Run the tick loop forward, and report the action the model asked for. */
@@ -26,8 +30,7 @@ static void test_close_runs_to_limit_and_calibrates(void)
 {
     shade_t s;
     uint32_t now = 1000;
-    shade_init(&s, &cfg, SHADE_OPEN);
-    s.last_ms = now;
+    shade_init(&s, &cfg, SHADE_OPEN, now);
 
     ASSERT_EQ(SHADE_ACT_DOWN, shade_close(&s, now));
     shade_action_t a = run_for(&s, &now, TRAVEL_MS + 500);
@@ -43,8 +46,7 @@ static void test_open_runs_to_limit(void)
 {
     shade_t s;
     uint32_t now = 1000;
-    shade_init(&s, &cfg, SHADE_CLOSED);
-    s.last_ms = now;
+    shade_init(&s, &cfg, SHADE_CLOSED, now);
 
     ASSERT_EQ(SHADE_ACT_UP, shade_open(&s, now));
     run_for(&s, &now, TRAVEL_MS + 500);
@@ -57,8 +59,7 @@ static void test_go_to_half_stops(void)
 {
     shade_t s;
     uint32_t now = 1000;
-    shade_init(&s, &cfg, SHADE_OPEN);
-    s.last_ms = now;
+    shade_init(&s, &cfg, SHADE_OPEN, now);
 
     ASSERT_EQ(SHADE_ACT_DOWN, shade_go_to(&s, 5000, now));
 
@@ -75,8 +76,7 @@ static void test_go_to_upward_sends_up(void)
 {
     shade_t s;
     uint32_t now = 1000;
-    shade_init(&s, &cfg, SHADE_CLOSED);
-    s.last_ms = now;
+    shade_init(&s, &cfg, SHADE_CLOSED, now);
 
     ASSERT_EQ(SHADE_ACT_UP, shade_go_to(&s, 2500, now));
     ASSERT_EQ(SHADE_ACT_STOP, run_for(&s, &now, 6000));
@@ -87,8 +87,7 @@ static void test_stop_freezes_position(void)
 {
     shade_t s;
     uint32_t now = 1000;
-    shade_init(&s, &cfg, SHADE_OPEN);
-    s.last_ms = now;
+    shade_init(&s, &cfg, SHADE_OPEN, now);
 
     shade_close(&s, now);
     run_for(&s, &now, 3500);
@@ -106,8 +105,7 @@ static void test_reverse_mid_travel(void)
 {
     shade_t s;
     uint32_t now = 1000;
-    shade_init(&s, &cfg, SHADE_OPEN);
-    s.last_ms = now;
+    shade_init(&s, &cfg, SHADE_OPEN, now);
 
     shade_close(&s, now);
     run_for(&s, &now, 3500); /* about 50% */
@@ -121,8 +119,7 @@ static void test_deadband_ignores_tiny_move(void)
 {
     shade_t s;
     uint32_t now = 1000;
-    shade_init(&s, &cfg, 5000);
-    s.last_ms = now;
+    shade_init(&s, &cfg, 5000, now);
 
     /* 0.5% away is inside the 1% deadband. */
     ASSERT_EQ(SHADE_ACT_NONE, shade_go_to(&s, 5050, now));
@@ -134,11 +131,15 @@ static void test_deadband_ignores_tiny_move(void)
 
 static void test_asymmetric_travel_times(void)
 {
-    shade_cfg_t asym = { .travel_open_ms = 9000, .travel_close_ms = 6000 };
+    shade_cfg_t asym = {
+        .travel_open_ms      = 9000,
+        .travel_close_ms     = 6000,
+        .open_is_hard_limit  = true,
+        .close_is_hard_limit = true,
+    };
     shade_t s;
     uint32_t now = 1000;
-    shade_init(&s, &asym, SHADE_OPEN);
-    s.last_ms = now;
+    shade_init(&s, &asym, SHADE_OPEN, now);
 
     shade_go_to(&s, 5000, now);
     ASSERT_EQ(SHADE_ACT_STOP, run_for(&s, &now, 3100)); /* 3.0 s of 6.0 s */
@@ -153,8 +154,7 @@ static void test_not_calibrated_until_a_limit_is_hit(void)
 {
     shade_t s;
     uint32_t now = 1000;
-    shade_init(&s, &cfg, 5000);
-    s.last_ms = now;
+    shade_init(&s, &cfg, 5000, now);
 
     shade_go_to(&s, 7000, now);
     run_for(&s, &now, 2000);
@@ -199,8 +199,7 @@ static void test_homekit_position_state(void)
 {
     shade_t s;
     uint32_t now = 1000;
-    shade_init(&s, &cfg, SHADE_OPEN);
-    s.last_ms = now;
+    shade_init(&s, &cfg, SHADE_OPEN, now);
 
     ASSERT_EQ(SHADE_HK_STOPPED, shade_hk_position_state(&s));
 
@@ -221,8 +220,7 @@ static void test_homekit_target_drives_correct_direction(void)
 {
     shade_t s;
     uint32_t now = 1000;
-    shade_init(&s, &cfg, SHADE_OPEN); /* HomeKit reads 100 */
-    s.last_ms = now;
+    shade_init(&s, &cfg, SHADE_OPEN, now); /* HomeKit reads 100 */
     ASSERT_EQ(100, shade_to_hk_position(s.position));
 
     /* 30% open is mostly closed, so the shade must go down. */
@@ -238,8 +236,84 @@ static void test_homekit_target_drives_correct_direction(void)
     ASSERT_NEAR(80, shade_to_hk_position(s.position), 1);
 }
 
+/* The real living-room setup: the top is a dock the motor knows, the bottom is
+ * a point we chose. Closing must end with our own Stop. */
+static shade_cfg_t soft_bottom = {
+    .travel_open_ms      = 17900,
+    .travel_close_ms     = 17100,
+    .open_is_hard_limit  = true,
+    .close_is_hard_limit = false,
+    .stop_lead_ms        = 0,
+};
+
+static void test_soft_close_end_sends_stop(void)
+{
+    shade_t s;
+    uint32_t now = 1000;
+    shade_init(&s, &soft_bottom, SHADE_OPEN, now);
+
+    ASSERT_EQ(SHADE_ACT_DOWN, shade_close(&s, now));
+    ASSERT_EQ(SHADE_ACT_NONE, run_for(&s, &now, 16000));
+    /* We must stop it ourselves, because the motor would keep going. */
+    ASSERT_EQ(SHADE_ACT_STOP, run_for(&s, &now, 2000));
+    ASSERT_EQ(SHADE_CLOSED, s.position);
+    ASSERT_EQ(SHADE_MOTION_IDLE, s.motion);
+    /* Nothing about a timed stop tells us where the shade really is. */
+    ASSERT_TRUE(!s.calibrated);
+}
+
+static void test_hard_open_end_still_sends_nothing(void)
+{
+    shade_t s;
+    uint32_t now = 1000;
+    shade_init(&s, &soft_bottom, SHADE_CLOSED, now);
+
+    ASSERT_EQ(SHADE_ACT_UP, shade_open(&s, now));
+    /* The top is a dock, so the motor stops itself and we stay quiet. */
+    ASSERT_EQ(SHADE_ACT_NONE, run_for(&s, &now, 18500));
+    ASSERT_EQ(SHADE_OPEN, s.position);
+    ASSERT_TRUE(s.calibrated);
+}
+
+/* Stop must go out early enough that the shade coasts onto the target rather
+ * than past it. */
+static void test_stop_lead_fires_early(void)
+{
+    shade_cfg_t lead = {
+        .travel_open_ms      = TRAVEL_MS,
+        .travel_close_ms     = TRAVEL_MS,
+        .open_is_hard_limit  = true,
+        .close_is_hard_limit = true,
+        .stop_lead_ms        = 700, /* 10% of a 7 s travel */
+    };
+    shade_t s;
+    uint32_t now = 1000;
+    shade_init(&s, &lead, SHADE_OPEN, now);
+
+    shade_go_to(&s, 5000, now);
+    ASSERT_EQ(SHADE_ACT_STOP, run_for(&s, &now, 5000));
+    /* Stop leaves at 40%, and the shade drifts the last 10% while the radio
+     * talks. Without the lead this would fire at 50% and overshoot. */
+    ASSERT_NEAR(4000, s.position, 150);
+}
+
+static void test_no_lead_means_no_early_stop(void)
+{
+    shade_t s;
+    uint32_t now = 1000;
+    shade_init(&s, &cfg, SHADE_OPEN, now); /* stop_lead_ms = 0 */
+
+    shade_go_to(&s, 5000, now);
+    ASSERT_EQ(SHADE_ACT_STOP, run_for(&s, &now, 5000));
+    ASSERT_NEAR(5000, s.position, 150);
+}
+
 void run_shade_ctl_tests(void)
 {
+    RUN(test_soft_close_end_sends_stop);
+    RUN(test_hard_open_end_still_sends_nothing);
+    RUN(test_stop_lead_fires_early);
+    RUN(test_no_lead_means_no_early_stop);
     RUN(test_homekit_position_is_inverted);
     RUN(test_homekit_position_round_trip);
     RUN(test_homekit_position_state);

@@ -1,22 +1,28 @@
 #include "shade_ctl.h"
 
-void shade_init(shade_t *s, const shade_cfg_t *cfg, uint16_t assumed_position)
+void shade_init(shade_t *s, const shade_cfg_t *cfg, uint16_t assumed_position,
+                uint32_t now_ms)
 {
-    s->cfg        = *cfg;
-    s->position   = assumed_position;
-    s->target     = assumed_position;
-    s->motion     = SHADE_MOTION_IDLE;
-    s->last_ms    = 0;
-    s->calibrated = false;
+    if (assumed_position > SHADE_CLOSED) {
+        assumed_position = SHADE_CLOSED;
+    }
+    s->cfg            = *cfg;
+    s->position       = assumed_position;
+    s->target         = assumed_position;
+    s->motion         = SHADE_MOTION_IDLE;
+    s->move_start_ms  = now_ms;
+    s->move_start_pos = assumed_position;
+    s->calibrated     = false;
 }
 
-/* Move the estimate forward by the time since the last call. */
+/* Derive the position from the time the move began, never from a running sum.
+ * Summing per-tick increments throws away the integer-division remainder on
+ * every tick. The caller ticks as fast as its main loop runs, so at a 1 ms
+ * tick over a 17 s travel every increment truncates to zero and the shade
+ * never moves at all. */
 static void integrate(shade_t *s, uint32_t now_ms)
 {
-    uint32_t elapsed = now_ms - s->last_ms; /* wraps correctly on uint32 */
-    s->last_ms = now_ms;
-
-    if (s->motion == SHADE_MOTION_IDLE || elapsed == 0) {
+    if (s->motion == SHADE_MOTION_IDLE) {
         return;
     }
 
@@ -27,15 +33,37 @@ static void integrate(shade_t *s, uint32_t now_ms)
         return;
     }
 
-    uint32_t delta = (uint32_t)((uint64_t)elapsed * SHADE_CLOSED / travel);
+    uint32_t elapsed = now_ms - s->move_start_ms; /* wraps correctly */
+    uint32_t delta   = (uint32_t)((uint64_t)elapsed * SHADE_CLOSED / travel);
 
     if (s->motion == SHADE_MOTION_OPENING) {
-        s->position = (delta >= s->position) ? SHADE_OPEN
-                                             : (uint16_t)(s->position - delta);
+        s->position = (delta >= s->move_start_pos)
+                          ? SHADE_OPEN
+                          : (uint16_t)(s->move_start_pos - delta);
     } else {
-        uint32_t p = s->position + delta;
+        uint32_t p  = (uint32_t)s->move_start_pos + delta;
         s->position = (p >= SHADE_CLOSED) ? SHADE_CLOSED : (uint16_t)p;
     }
+}
+
+/* Rebase the move so the next integrate() measures from here. */
+static void begin_move(shade_t *s, shade_motion_t motion, uint32_t now_ms)
+{
+    s->motion         = motion;
+    s->move_start_ms  = now_ms;
+    s->move_start_pos = s->position;
+}
+
+/* Distance the shade covers while the radio gets the first frame out. */
+static uint32_t lead_distance(const shade_t *s)
+{
+    uint32_t travel = (s->motion == SHADE_MOTION_OPENING)
+                          ? s->cfg.travel_open_ms
+                          : s->cfg.travel_close_ms;
+    if (travel == 0 || s->cfg.stop_lead_ms == 0) {
+        return 0;
+    }
+    return (uint32_t)((uint64_t)s->cfg.stop_lead_ms * SHADE_CLOSED / travel);
 }
 
 shade_action_t shade_tick(shade_t *s, uint32_t now_ms)
@@ -46,19 +74,29 @@ shade_action_t shade_tick(shade_t *s, uint32_t now_ms)
         return SHADE_ACT_NONE;
     }
 
-    bool at_limit = (s->motion == SHADE_MOTION_OPENING && s->position == SHADE_OPEN) ||
-                    (s->motion == SHADE_MOTION_CLOSING && s->position == SHADE_CLOSED);
+    bool opening = (s->motion == SHADE_MOTION_OPENING);
+    uint16_t end = opening ? SHADE_OPEN : SHADE_CLOSED;
 
-    if (at_limit) {
-        /* The motor stops itself at its own hard limit, so we send nothing.
-         * The estimate now matches the real position. */
-        s->motion     = SHADE_MOTION_IDLE;
-        s->calibrated = true;
+    /* Heading for an end the motor knows about? Let it stop itself. Sending
+     * Stop here would arrive after the motor halted and be read as "go to the
+     * favourite position". */
+    bool into_hard_stop =
+        (s->target == end) &&
+        (opening ? s->cfg.open_is_hard_limit : s->cfg.close_is_hard_limit);
+
+    if (into_hard_stop) {
+        if (s->position == end) {
+            s->motion     = SHADE_MOTION_IDLE;
+            s->calibrated = true;
+        }
         return SHADE_ACT_NONE;
     }
 
-    bool reached = (s->motion == SHADE_MOTION_OPENING && s->position <= s->target) ||
-                   (s->motion == SHADE_MOTION_CLOSING && s->position >= s->target);
+    int32_t lead = (int32_t)lead_distance(s);
+    int32_t pos  = (int32_t)s->position;
+    int32_t want = (int32_t)s->target;
+
+    bool reached = opening ? (pos - lead <= want) : (pos + lead >= want);
 
     if (reached) {
         s->motion = SHADE_MOTION_IDLE;
@@ -71,7 +109,7 @@ shade_action_t shade_tick(shade_t *s, uint32_t now_ms)
 shade_action_t shade_stop(shade_t *s, uint32_t now_ms)
 {
     integrate(s, now_ms);
-    s->motion = SHADE_MOTION_IDLE;
+    begin_move(s, SHADE_MOTION_IDLE, now_ms);
     s->target = s->position;
     return SHADE_ACT_STOP;
 }
@@ -80,7 +118,7 @@ shade_action_t shade_open(shade_t *s, uint32_t now_ms)
 {
     integrate(s, now_ms);
     s->target = SHADE_OPEN;
-    s->motion = SHADE_MOTION_OPENING;
+    begin_move(s, SHADE_MOTION_OPENING, now_ms);
     return SHADE_ACT_UP;
 }
 
@@ -88,7 +126,7 @@ shade_action_t shade_close(shade_t *s, uint32_t now_ms)
 {
     integrate(s, now_ms);
     s->target = SHADE_CLOSED;
-    s->motion = SHADE_MOTION_CLOSING;
+    begin_move(s, SHADE_MOTION_CLOSING, now_ms);
     return SHADE_ACT_DOWN;
 }
 
@@ -144,9 +182,9 @@ shade_action_t shade_go_to(shade_t *s, uint16_t target, uint32_t now_ms)
 
     s->target = target;
     if (diff < 0) {
-        s->motion = SHADE_MOTION_OPENING;
+        begin_move(s, SHADE_MOTION_OPENING, now_ms);
         return SHADE_ACT_UP;
     }
-    s->motion = SHADE_MOTION_CLOSING;
+    begin_move(s, SHADE_MOTION_CLOSING, now_ms);
     return SHADE_ACT_DOWN;
 }

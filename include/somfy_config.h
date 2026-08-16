@@ -21,8 +21,25 @@
 /* One frame plus this many repeats. Real remotes send 2 to 6. */
 #define SOMFY_REPEATS 4
 
-/* Full travel, in ms. Measure this per shade and correct it later. */
-#define SHADE_TRAVEL_OPEN_MS  7000
-#define SHADE_TRAVEL_CLOSE_MS 7000
+/* Measured on the living-room shades, 2026-08-15.
+ * Down: 17.1 s from the top dock to the chosen bottom position.
+ * Up:   17.9 s from that bottom position back to the dock. */
+#define SHADE_TRAVEL_OPEN_MS  17900
+#define SHADE_TRAVEL_CLOSE_MS 17100
+
+/* The top is a dock the motor knows, so we let it stop itself there and the
+ * position estimate re-calibrates.
+ *
+ * The bottom is a position we chose, not a motor limit, so we must send Stop
+ * ourselves. Never set this true unless the motor really does stop there: a
+ * Stop that lands after the motor already halted is read as "go to the
+ * favourite position", and the shade wanders off. */
+#define SHADE_OPEN_IS_HARD_LIMIT  true
+#define SHADE_CLOSE_IS_HARD_LIMIT false
+
+/* Send Stop this early, to cover the time before the motor acts on the first
+ * frame. About 130 ms of that is the wake-up pulse and the first frame. Tune
+ * once the radio is fitted. */
+#define SHADE_STOP_LEAD_MS 150
 
 #endif /* SOMFY_CONFIG_H */

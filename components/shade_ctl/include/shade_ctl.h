@@ -43,6 +43,24 @@ typedef enum {
 typedef struct {
     uint32_t travel_open_ms;  /* full closed -> full open */
     uint32_t travel_close_ms; /* full open  -> full closed */
+
+    /* True when the motor has its own end stop at that end. We then let it
+     * run into the stop and send nothing, and the estimate re-calibrates
+     * against the real position.
+     *
+     * False when the end is a position we chose rather than one the motor
+     * knows. We must then send Stop ourselves, and nothing calibrates.
+     *
+     * Getting this backwards is worse than it sounds. On an RTS motor, My
+     * stops a shade that is moving, but a shade that has already stopped
+     * treats My as "go to the favourite position". A Stop sent after the
+     * motor reached its own limit therefore sends the shade somewhere else. */
+    bool open_is_hard_limit;
+    bool close_is_hard_limit;
+
+    /* How early to send Stop, to cover the time the radio needs before the
+     * motor acts on the first frame. Zero disables the compensation. */
+    uint32_t stop_lead_ms;
 } shade_cfg_t;
 
 typedef struct {
@@ -50,13 +68,17 @@ typedef struct {
     uint16_t       position;
     uint16_t       target;
     shade_motion_t motion;
-    uint32_t       last_ms;
+    /* Where and when the current move began. Position is derived from these,
+     * never accumulated tick by tick. */
+    uint32_t       move_start_ms;
+    uint16_t       move_start_pos;
     /* False until the shade drives into a hard limit. Before that the position
      * is a guess, because we cannot know where the shade sat at boot. */
     bool           calibrated;
 } shade_t;
 
-void shade_init(shade_t *s, const shade_cfg_t *cfg, uint16_t assumed_position);
+void shade_init(shade_t *s, const shade_cfg_t *cfg, uint16_t assumed_position,
+                uint32_t now_ms);
 
 /* Drive fully open. Runs into the hard limit, which re-calibrates. */
 shade_action_t shade_open(shade_t *s, uint32_t now_ms);

@@ -97,3 +97,18 @@ On 2026-08-15, with no CC1101 fitted:
 - `@S` and the HomeSpan `s` command both work over the serial console.
 
 Still unproven: everything that needs the radio.
+
+## Confirm the bottom end before you trust it
+
+`SHADE_CLOSE_IS_HARD_LIMIT` is set false, on the assumption that your chosen
+bottom position is **not** where the motor's own down limit sits. We therefore
+send Stop ourselves after 17.1 s.
+
+Check this once the radio works. Send Down and let it run without our Stop. If
+the shade keeps going past your point, the assumption is right. If it halts
+exactly there, the motor has a limit and the flag should be true.
+
+Getting it wrong the harmful way — flag true when there is no limit — makes the
+shade run to the motor's real limit. Getting it wrong the other way sends a
+Stop after the motor already halted, and an RTS motor reads that as "go to the
+favourite position".

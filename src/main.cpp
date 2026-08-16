@@ -31,9 +31,14 @@ struct SomfyShade : Service::WindowCovering {
 
     explicit SomfyShade(uint8_t i) : idx(i)
     {
-        shade_cfg_t cfg = { SHADE_TRAVEL_OPEN_MS, SHADE_TRAVEL_CLOSE_MS };
-        shade_init(&model, &cfg, shade_from_hk_position(current.getVal()));
-        model.last_ms = millis();
+        shade_cfg_t cfg = {};
+        cfg.travel_open_ms      = SHADE_TRAVEL_OPEN_MS;
+        cfg.travel_close_ms     = SHADE_TRAVEL_CLOSE_MS;
+        cfg.open_is_hard_limit  = SHADE_OPEN_IS_HARD_LIMIT;
+        cfg.close_is_hard_limit = SHADE_CLOSE_IS_HARD_LIMIT;
+        cfg.stop_lead_ms        = SHADE_STOP_LEAD_MS;
+        shade_init(&model, &cfg, shade_from_hk_position(current.getVal()),
+                   millis());
     }
 
     void drive(shade_action_t a)
