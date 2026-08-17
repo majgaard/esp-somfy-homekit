@@ -120,6 +120,13 @@ shade_action_t shade_tick(shade_t *s, uint32_t now_ms)
 
     if (reached) {
         s->motion = SHADE_MOTION_IDLE;
+        /* We stopped early on purpose, expecting the shade to coast the last
+         * bit while the radio transmits, so the target is now the best
+         * estimate. Leaving the old value here would also strand HomeKit:
+         * the Home app shows "Closing..." for as long as CurrentPosition
+         * differs from TargetPosition, so a position that never converges
+         * means a tile that never settles. */
+        s->position = s->target;
         return SHADE_ACT_STOP;
     }
 
@@ -188,6 +195,13 @@ uint16_t shade_from_hk_position(uint8_t hk_percent)
 
 uint8_t shade_hk_position_state(const shade_t *s)
 {
+    /* Between the Stop and the follow-up My the shade stands still, but the
+     * close is still in progress. Report it as such, or the tile flickers to
+     * "stopped" and back. */
+    if (s->favourite_pending) {
+        return SHADE_HK_DECREASING;
+    }
+
     switch (s->motion) {
     /* We open, so the HomeKit number grows. */
     case SHADE_MOTION_OPENING: return SHADE_HK_INCREASING;
@@ -215,8 +229,16 @@ shade_action_t shade_go_to(shade_t *s, uint16_t target, uint32_t now_ms)
     if (diff > -SHADE_DEADBAND && diff < SHADE_DEADBAND) {
         /* Already close enough. Stop only if the shade still moves. */
         if (s->motion != SHADE_MOTION_IDLE) {
-            return shade_stop(s, now_ms);
+            shade_action_t a = shade_stop(s, now_ms);
+            s->target   = target;
+            s->position = target;
+            return a;
         }
+        /* Take the target as read. The difference is below what we can steer
+         * to anyway, and HomeKit needs the two to meet or the tile sits on
+         * "Closing..." for ever. */
+        s->target   = target;
+        s->position = target;
         return SHADE_ACT_NONE;
     }
 

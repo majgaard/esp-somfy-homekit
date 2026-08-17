@@ -275,8 +275,21 @@ static void test_hard_open_end_still_sends_nothing(void)
     ASSERT_TRUE(s.calibrated);
 }
 
+/* Tick until Stop, and report how long that took. */
+static uint32_t ms_until_stop(shade_t *s, uint32_t *now, uint32_t limit_ms)
+{
+    for (uint32_t t = 0; t < limit_ms; t += 10) {
+        *now += 10;
+        if (shade_tick(s, *now) == SHADE_ACT_STOP) {
+            return t + 10;
+        }
+    }
+    return limit_ms;
+}
+
 /* Stop must go out early enough that the shade coasts onto the target rather
- * than past it. */
+ * than past it. The lead shows up in the timing, not in the final position:
+ * the whole point is that the shade ends up on the target. */
 static void test_stop_lead_fires_early(void)
 {
     shade_cfg_t lead = {
@@ -291,21 +304,69 @@ static void test_stop_lead_fires_early(void)
     shade_init(&s, &lead, SHADE_OPEN, now);
 
     shade_go_to(&s, 5000, now);
-    ASSERT_EQ(SHADE_ACT_STOP, run_for(&s, &now, 5000));
-    /* Stop leaves at 40%, and the shade drifts the last 10% while the radio
-     * talks. Without the lead this would fire at 50% and overshoot. */
-    ASSERT_NEAR(4000, s.position, 150);
+    uint32_t took = ms_until_stop(&s, &now, 6000);
+
+    /* 50% of a 7 s travel is 3500 ms. The 700 ms lead brings it to 2800 ms. */
+    ASSERT_NEAR(2800, took, 60);
+    /* And the estimate settles on the target, not short of it. */
+    ASSERT_EQ(5000, s.position);
 }
 
-static void test_no_lead_means_no_early_stop(void)
+/* Without a lead the Stop goes out at the target, and the estimate still
+ * settles exactly on it. */
+static void test_no_lead_stops_on_time(void)
 {
     shade_t s;
     uint32_t now = 1000;
-    shade_init(&s, &cfg, SHADE_OPEN, now); /* stop_lead_ms = 0 */
+    shade_init(&s, &cfg, SHADE_OPEN, now);
 
     shade_go_to(&s, 5000, now);
-    ASSERT_EQ(SHADE_ACT_STOP, run_for(&s, &now, 5000));
-    ASSERT_NEAR(5000, s.position, 150);
+    uint32_t took = ms_until_stop(&s, &now, 6000);
+
+    ASSERT_NEAR(3500, took, 60);
+    ASSERT_EQ(5000, s.position);
+}
+
+/* HomeKit shows "Closing..." for as long as CurrentPosition differs from
+ * TargetPosition, so every path that ends a move must land the two together. */
+static void test_position_always_converges_on_target(void)
+{
+    const uint16_t targets[] = { 500, 2500, 5000, 7500, 9500 };
+    shade_cfg_t lead = {
+        .travel_open_ms      = 17900,
+        .travel_close_ms     = 17100,
+        .open_is_hard_limit  = true,
+        .close_is_hard_limit = false,
+        .stop_lead_ms        = 150,
+    };
+
+    for (size_t i = 0; i < sizeof(targets) / sizeof(targets[0]); i++) {
+        shade_t s;
+        uint32_t now = 1000;
+        shade_init(&s, &lead, SHADE_OPEN, now);
+
+        shade_go_to(&s, targets[i], now);
+        run_for(&s, &now, 20000);
+
+        ASSERT_EQ(targets[i], s.position);
+        ASSERT_EQ(shade_to_hk_position(targets[i]),
+                  shade_to_hk_position(s.position));
+        ASSERT_EQ(SHADE_HK_STOPPED, shade_hk_position_state(&s));
+    }
+}
+
+/* A target inside the deadband must still converge, or the tile never
+ * settles even though nothing needs to move. */
+static void test_deadband_target_still_converges(void)
+{
+    shade_t s;
+    uint32_t now = 1000;
+    shade_init(&s, &cfg, 5000, now);
+
+    ASSERT_EQ(SHADE_ACT_NONE, shade_go_to(&s, 5050, now));
+    ASSERT_EQ(5050, s.position);
+    ASSERT_EQ(5050, s.target);
+    ASSERT_EQ(SHADE_HK_STOPPED, shade_hk_position_state(&s));
 }
 
 /* With the motor's favourite programmed at our fully-closed position, closing
@@ -410,7 +471,9 @@ void run_shade_ctl_tests(void)
     RUN(test_soft_close_end_sends_stop);
     RUN(test_hard_open_end_still_sends_nothing);
     RUN(test_stop_lead_fires_early);
-    RUN(test_no_lead_means_no_early_stop);
+    RUN(test_no_lead_stops_on_time);
+    RUN(test_position_always_converges_on_target);
+    RUN(test_deadband_target_still_converges);
     RUN(test_homekit_position_is_inverted);
     RUN(test_homekit_position_round_trip);
     RUN(test_homekit_position_state);
