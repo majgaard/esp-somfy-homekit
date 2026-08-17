@@ -18,16 +18,33 @@ static const char *kShadeNames[SHADE_COUNT] = {
     "Right Shade",
 };
 
+static const char *motion_name(uint8_t hk_state)
+{
+    switch (hk_state) {
+    case SHADE_HK_INCREASING: return "opening";
+    case SHADE_HK_DECREASING: return "closing";
+    default:                  return "stopped";
+    }
+}
+
 struct SomfyShade : Service::WindowCovering {
     /* HomeKit counts the opposite way to shade_ctl: 100 is fully open here.
-     * The nvsStore flag keeps the last position across a reboot. */
-    Characteristic::CurrentPosition current{100, true};
+     *
+     * Only TargetPosition carries nvsStore. HomeSpan's setVal() commits to
+     * NVS on every call with no change check, and CurrentPosition changes a
+     * hundred times per travel, so backing it would mean a synchronous flash
+     * write per step. TargetPosition only moves when someone asks for
+     * something, and it is enough to restore state after a reboot. */
+    Characteristic::CurrentPosition current{100};
     Characteristic::TargetPosition  target{100, true};
     Characteristic::PositionState   state{SHADE_HK_STOPPED};
 
     uint8_t  idx;
     shade_t  model;
-    uint32_t last_report = 0;
+    /* Last values pushed to HomeKit. Every setVal costs a notification, and
+     * an NVS commit if the characteristic is stored, so only push changes. */
+    uint8_t  last_pct   = 0;
+    uint8_t  last_state = 0;
 
     explicit SomfyShade(uint8_t i) : idx(i)
     {
@@ -39,12 +56,25 @@ struct SomfyShade : Service::WindowCovering {
         cfg.stop_lead_ms          = SHADE_STOP_LEAD_MS;
         cfg.close_uses_favourite  = SHADE_CLOSE_USES_FAVOURITE;
         cfg.favourite_delay_ms    = SHADE_FAVOURITE_DELAY_MS;
-        shade_init(&model, &cfg, shade_from_hk_position(current.getVal()),
-                   millis());
+        /* Restore from the stored target. We cannot know where the shade
+         * really sits at boot, so this is a guess either way, and calibrated
+         * stays false until a travel reaches a limit. */
+        uint8_t restored = target.getVal();
+        shade_init(&model, &cfg, shade_from_hk_position(restored), millis());
+        current.setVal(restored);
+        last_pct   = restored;
+        last_state = SHADE_HK_STOPPED;
     }
 
     void drive(shade_action_t a)
     {
+        static const char *names[] = { "none", "UP", "DOWN", "STOP",
+                                       "FAVOURITE" };
+        if (a != SHADE_ACT_NONE) {
+            Serial.printf("[%u %-12s] send %s%s\n", idx, kShadeNames[idx],
+                          names[a], somfy_radio_ok() ? "" : "  (no radio)");
+        }
+
         switch (a) {
         case SHADE_ACT_UP:
             somfy_send(idx, SOMFY_CMD_UP);
@@ -67,8 +97,11 @@ struct SomfyShade : Service::WindowCovering {
     boolean update() override
     {
         if (target.updated()) {
-            uint16_t want = shade_from_hk_position(target.getNewVal());
-            drive(shade_go_to(&model, want, millis()));
+            uint8_t want = target.getNewVal();
+            Serial.printf("[%u %-12s] HomeKit asks for %u%% (now %u%%)\n", idx,
+                          kShadeNames[idx], want,
+                          shade_to_hk_position(model.position));
+            drive(shade_go_to(&model, shade_from_hk_position(want), millis()));
         }
         return true;
     }
@@ -80,13 +113,27 @@ struct SomfyShade : Service::WindowCovering {
             drive(a);
         }
 
-        /* Report twice a second while moving. The Home app animates between
-         * updates, so faster gains nothing. */
-        if (millis() - last_report >= 500) {
-            last_report = millis();
-            current.setVal(shade_to_hk_position(model.position));
-            state.setVal(shade_hk_position_state(&model));
+        uint8_t pct = shade_to_hk_position(model.position);
+        uint8_t st  = shade_hk_position_state(&model);
+
+        /* Nothing changed, so say nothing. This is what keeps the accessory
+         * quiet and the flash intact while the shades sit still. */
+        if (pct == last_pct && st == last_state) {
+            return;
         }
+
+        if (pct != last_pct) {
+            current.setVal(pct);
+        }
+        if (st != last_state) {
+            state.setVal(st);
+        }
+
+        Serial.printf("[%u %-12s] %3u%% -> %3u%%  %s\n", idx, kShadeNames[idx],
+                      pct, shade_to_hk_position(model.target), motion_name(st));
+
+        last_pct   = pct;
+        last_state = st;
     }
 };
 
