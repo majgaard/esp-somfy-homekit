@@ -106,6 +106,26 @@ static void cmd_prog(const char *buf)
     somfy_send((uint8_t)n, SOMFY_CMD_PROG);
 }
 
+/* Drive a shade from the console, in HomeKit percent. Lets bring-up exercise
+ * the position model and the radio without going through the Home app. */
+static void cmd_move(const char *buf)
+{
+    int n = -1, pct = -1;
+    if (sscanf(buf + 1, "%d %d", &n, &pct) != 2 || n < 0 || n >= SHADE_COUNT ||
+        pct < 0 || pct > 100) {
+        Serial.printf("usage: @M<n> <pct>, n 0 to %d, pct 0 to 100\n",
+                      SHADE_COUNT - 1);
+        return;
+    }
+    SomfyShade *sh = g_shades[n];
+    Serial.printf("Shade %d (%s): %u%% -> %d%%\n", n, kShadeNames[n],
+                  shade_to_hk_position(sh->model.position), pct);
+    /* Keep HomeKit's target in step, or the Home app shows a stale one. */
+    sh->target.setVal(pct);
+    sh->drive(shade_go_to(&sh->model, shade_from_hk_position((uint8_t)pct),
+                          millis()));
+}
+
 static void cmd_status(const char *buf)
 {
     (void)buf;
@@ -144,6 +164,8 @@ void setup()
 
     new SpanUserCommand('P', "<n> - pair: send PROG to shade n", cmd_prog);
     new SpanUserCommand('S', " - show radio and shade status", cmd_status);
+    new SpanUserCommand('M', "<n> <pct> - move shade n to pct (HomeKit scale)",
+                        cmd_move);
 }
 
 void loop() { homeSpan.poll(); }

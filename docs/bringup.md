@@ -128,3 +128,22 @@ wanted bottom position, two good things follow.
 
 To set it: drive the shade to the wanted position with the existing remote,
 then hold MY for about 5 s until the shade jogs.
+
+## Driving a shade from the console
+
+`@M<n> <pct>` moves shade `n` to a HomeKit percent, so bring-up can exercise
+the position model and later the radio without the Home app.
+
+```
+@M0 50      move the left shade to 50% open
+@S          show where it thinks it is
+```
+
+With no radio fitted the model still runs, which is how the position estimate
+was verified. Sampling during a move gave 8.8% per 1.5 s, matching the measured
+17.1 s full travel.
+
+Expect the shade to rest about 1% short of the target. `SHADE_STOP_LEAD_MS` is
+150 ms, which is 0.88% of a 17.1 s travel, and the model assumes the shade
+coasts that last bit while the radio transmits. With no motor attached nothing
+coasts. Once the radio works, check the real resting position and tune the lead.
