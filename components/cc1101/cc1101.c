@@ -161,6 +161,64 @@ bool cc1101_configure_ook_tx(const cc1101_hal_t *hal, const cc1101_cfg_t *cfg)
     return true;
 }
 
+/* The registers worth naming when something is wrong. */
+static const char *reg_name(uint8_t addr)
+{
+    switch (addr) {
+    case CC1101_IOCFG2:   return "IOCFG2";
+    case CC1101_IOCFG0:   return "IOCFG0";
+    case CC1101_PKTCTRL0: return "PKTCTRL0";
+    case CC1101_MDMCFG2:  return "MDMCFG2";
+    case CC1101_FREND0:   return "FREND0";
+    case CC1101_FREQ2:    return "FREQ2";
+    case CC1101_FREQ1:    return "FREQ1";
+    case CC1101_FREQ0:    return "FREQ0";
+    case CC1101_TEST0:    return "TEST0";
+    default:              return "";
+    }
+}
+
+size_t cc1101_verify(const cc1101_hal_t *hal, const cc1101_cfg_t *cfg,
+                     cc1101_regcheck_t *out, size_t cap)
+{
+    size_t n = 0;
+
+    for (unsigned i = 0; i < sizeof(k_base) / sizeof(k_base[0]) && n < cap; i++) {
+        out[n].addr = k_base[i][0];
+        out[n].want = k_base[i][1];
+        out[n].got  = cc1101_read_reg(hal, k_base[i][0]);
+        out[n].name = reg_name(k_base[i][0]);
+        n++;
+    }
+
+    uint32_t xosc = cfg->xosc_hz ? cfg->xosc_hz : CC1101_XOSC_HZ_DEFAULT;
+    uint32_t word = cc1101_freq_word(cfg->freq_hz, xosc);
+    const uint8_t freq[3][2] = {
+        { CC1101_FREQ2, (uint8_t)(word >> 16) },
+        { CC1101_FREQ1, (uint8_t)(word >> 8) },
+        { CC1101_FREQ0, (uint8_t)(word) },
+    };
+    for (unsigned i = 0; i < 3 && n < cap; i++) {
+        out[n].addr = freq[i][0];
+        out[n].want = freq[i][1];
+        out[n].got  = cc1101_read_reg(hal, freq[i][0]);
+        out[n].name = reg_name(freq[i][0]);
+        n++;
+    }
+
+    return n;
+}
+
+void cc1101_read_patable(const cc1101_hal_t *hal, uint8_t out[8])
+{
+    hal->cs(hal->ctx, true);
+    hal->spi_xfer(hal->ctx, (uint8_t)(CC1101_PATABLE | CC1101_READ_BURST));
+    for (int i = 0; i < 8; i++) {
+        out[i] = hal->spi_xfer(hal->ctx, 0x00);
+    }
+    hal->cs(hal->ctx, false);
+}
+
 void cc1101_tx_start(const cc1101_hal_t *hal)
 {
     cc1101_strobe(hal, CC1101_SIDLE);

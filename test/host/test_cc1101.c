@@ -18,10 +18,13 @@ typedef struct {
     size_t     nbytes;
     regwrite_t writes[MAX_OPS];
     size_t     nwrites;
-    /* Bytes the chip clocks back, consumed in order. */
+    /* Bytes the chip clocks back for status reads, consumed in order. */
     uint8_t    reads[16];
     size_t     nreads;
     size_t     read_pos;
+    /* The fake chip's register file, so reads return what writes stored. */
+    uint8_t    regs[64];
+    uint8_t    patable[8];
     bool       selected;
     size_t     frame_len; /* bytes since CS went low */
     uint8_t    frame_hdr;
@@ -59,18 +62,39 @@ static uint8_t mock_xfer(void *ctx, uint8_t out)
         return 0x0F;
     }
 
-    if (pos == 1 && !(m->frame_hdr & 0x80) &&
-        !(m->frame_hdr & CC1101_WRITE_BURST)) {
+    uint8_t addr = m->frame_hdr & 0x3F;
+    uint8_t mode = m->frame_hdr & 0xC0;
+
+    if (mode == 0x00 && pos == 1) {
         /* single register write */
         if (m->nwrites < MAX_OPS) {
             m->writes[m->nwrites].addr  = m->frame_hdr;
             m->writes[m->nwrites].value = out;
             m->nwrites++;
         }
+        m->regs[addr] = out;
+        return 0x00;
     }
 
-    if ((m->frame_hdr & 0x80) && m->read_pos < m->nreads) {
-        return m->reads[m->read_pos++];
+    if (mode == CC1101_WRITE_BURST) {
+        if (addr == CC1101_PATABLE && pos >= 1 && pos <= 8) {
+            m->patable[pos - 1] = out;
+        }
+        return 0x00;
+    }
+
+    if (mode == CC1101_READ_SINGLE) {
+        return m->regs[addr];
+    }
+
+    if (mode == CC1101_READ_BURST) {
+        if (addr == CC1101_PATABLE && pos >= 1 && pos <= 8) {
+            return m->patable[pos - 1];
+        }
+        /* status register, served from the queue */
+        if (m->read_pos < m->nreads) {
+            return m->reads[m->read_pos++];
+        }
     }
     return 0x00;
 }
@@ -271,8 +295,99 @@ static void test_tx_start_strobes_in_order(void)
     ASSERT_EQ(0, m.cs_errors);
 }
 
+static cc1101_cfg_t somfy_cfg(void)
+{
+    cc1101_cfg_t c = {
+        .freq_hz = CC1101_SOMFY_HZ,
+        .xosc_hz = CC1101_XOSC_HZ_DEFAULT,
+        .tx_dbm  = 10,
+    };
+    return c;
+}
+
+/* A chip that stored everything we sent must verify clean. */
+static void test_verify_passes_on_a_healthy_chip(void)
+{
+    mock_t m;
+    cc1101_hal_t hal;
+    mock_init(&m, &hal);
+    m.reads[0] = 0x00;
+    m.reads[1] = 0x14;
+    m.nreads   = 2;
+
+    cc1101_cfg_t cfg = somfy_cfg();
+    ASSERT_TRUE(cc1101_configure_ook_tx(&hal, &cfg));
+
+    cc1101_regcheck_t chk[48];
+    size_t n = cc1101_verify(&hal, &cfg, chk, 48);
+    ASSERT_TRUE(n >= 30);
+
+    int bad = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (chk[i].want != chk[i].got) {
+            bad++;
+        }
+    }
+    ASSERT_EQ(0, bad);
+    ASSERT_EQ(0, m.cs_errors);
+}
+
+/* A register that silently failed to stick must be caught by name. */
+static void test_verify_catches_a_register_that_did_not_stick(void)
+{
+    mock_t m;
+    cc1101_hal_t hal;
+    mock_init(&m, &hal);
+    m.reads[0] = 0x00;
+    m.reads[1] = 0x14;
+    m.nreads   = 2;
+
+    cc1101_cfg_t cfg = somfy_cfg();
+    ASSERT_TRUE(cc1101_configure_ook_tx(&hal, &cfg));
+
+    /* Simulate the frequency word not taking, which is the failure that puts
+     * us on the wrong band and looks like a dead motor. */
+    m.regs[CC1101_FREQ1] = 0x00;
+
+    cc1101_regcheck_t chk[48];
+    size_t n = cc1101_verify(&hal, &cfg, chk, 48);
+
+    int bad = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (chk[i].want != chk[i].got) {
+            bad++;
+            ASSERT_EQ(CC1101_FREQ1, chk[i].addr);
+            ASSERT_EQ(0xAB, chk[i].want);
+            ASSERT_EQ(0x00, chk[i].got);
+        }
+    }
+    ASSERT_EQ(1, bad);
+}
+
+static void test_patable_reads_back(void)
+{
+    mock_t m;
+    cc1101_hal_t hal;
+    mock_init(&m, &hal);
+    m.reads[0] = 0x00;
+    m.reads[1] = 0x14;
+    m.nreads   = 2;
+
+    cc1101_cfg_t cfg = somfy_cfg();
+    ASSERT_TRUE(cc1101_configure_ook_tx(&hal, &cfg));
+
+    uint8_t pa[8];
+    cc1101_read_patable(&hal, pa);
+    ASSERT_EQ(0x00, pa[0]); /* carrier off */
+    ASSERT_EQ(0xC0, pa[1]); /* carrier on at 10 dBm */
+    ASSERT_EQ(0, m.cs_errors);
+}
+
 void run_cc1101_tests(void)
 {
+    RUN(test_verify_passes_on_a_healthy_chip);
+    RUN(test_verify_catches_a_register_that_did_not_stick);
+    RUN(test_patable_reads_back);
     RUN(test_freq_word_for_somfy);
     RUN(test_somfy_differs_from_433_92);
     RUN(test_freq_word_round_trip);

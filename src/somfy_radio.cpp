@@ -157,6 +157,56 @@ bool somfy_radio_begin(void)
     return true;
 }
 
+int somfy_radio_verify(void)
+{
+    if (!s_ok) {
+        Serial.println("[radio] not ready, nothing to verify");
+        return -1;
+    }
+
+    cc1101_cfg_t cfg = {};
+    cfg.freq_hz = CC1101_SOMFY_HZ;
+    cfg.xosc_hz = CC1101_XOSC_HZ_DEFAULT;
+    cfg.tx_dbm  = SOMFY_TX_DBM;
+
+    cc1101_regcheck_t chk[48];
+    size_t n = cc1101_verify(&s_hal, &cfg, chk, 48);
+
+    int bad = 0;
+    for (size_t i = 0; i < n; i++) {
+        bool ok = chk[i].want == chk[i].got;
+        if (!ok) {
+            bad++;
+        }
+        /* Print the named registers always, the rest only when wrong. */
+        if (!ok || chk[i].name[0]) {
+            Serial.printf("  %-9s 0x%02X  want %02X  got %02X  %s\n",
+                          chk[i].name, chk[i].addr, chk[i].want, chk[i].got,
+                          ok ? "ok" : "MISMATCH");
+        }
+    }
+
+    uint8_t pa[8];
+    cc1101_read_patable(&s_hal, pa);
+    Serial.printf("  PATABLE        off %02X  on %02X  %s\n", pa[0], pa[1],
+                  (pa[0] == 0x00 && pa[1] != 0x00) ? "ok"
+                                                   : "MISMATCH (OOK needs 0)");
+    if (pa[0] != 0x00 || pa[1] == 0x00) {
+        bad++;
+    }
+
+    uint32_t hz = cc1101_word_to_hz(
+        ((uint32_t)cc1101_read_reg(&s_hal, CC1101_FREQ2) << 16) |
+            ((uint32_t)cc1101_read_reg(&s_hal, CC1101_FREQ1) << 8) |
+            cc1101_read_reg(&s_hal, CC1101_FREQ0),
+        CC1101_XOSC_HZ_DEFAULT);
+    Serial.printf("  carrier        %lu.%02lu MHz\n", (unsigned long)(hz / 1000000),
+                  (unsigned long)((hz % 1000000 + 5000) / 10000));
+
+    Serial.printf("[radio] %d mismatches of %u registers\n", bad, (unsigned)n);
+    return bad;
+}
+
 bool somfy_send(uint8_t shade, somfy_cmd_t cmd)
 {
     if (!s_ok || shade >= SHADE_COUNT) {

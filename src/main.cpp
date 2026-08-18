@@ -173,6 +173,12 @@ static void cmd_move(const char *buf)
                           millis()));
 }
 
+static void cmd_verify(const char *buf)
+{
+    (void)buf;
+    somfy_radio_verify();
+}
+
 static void cmd_status(const char *buf)
 {
     (void)buf;
@@ -213,6 +219,8 @@ void setup()
     new SpanUserCommand('S', " - show radio and shade status", cmd_status);
     new SpanUserCommand('M', "<n> <pct> - move shade n to pct (HomeKit scale)",
                         cmd_move);
+    new SpanUserCommand('R', " - read the CC1101 config back and check it",
+                        cmd_verify);
 }
 
 void loop() { homeSpan.poll(); }

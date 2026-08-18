@@ -18,4 +18,7 @@ bool somfy_send(uint8_t shade, somfy_cmd_t cmd);
 uint16_t somfy_rolling_code(uint8_t shade);
 uint32_t somfy_address(uint8_t shade);
 
+/* Read the CC1101 config back and print it. Returns the mismatch count. */
+int somfy_radio_verify(void);
+
 #endif /* SOMFY_RADIO_H */

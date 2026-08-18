@@ -15,6 +15,7 @@
 #define CC1101_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -115,6 +116,23 @@ bool cc1101_configure_ook_tx(const cc1101_hal_t *hal, const cc1101_cfg_t *cfg);
 /* Key the PA on. Call this, play the envelope on GDO0, then call idle. */
 void cc1101_tx_start(const cc1101_hal_t *hal);
 void cc1101_tx_end(const cc1101_hal_t *hal);
+
+typedef struct {
+    uint8_t addr;
+    uint8_t want;
+    uint8_t got;
+    const char *name;
+} cc1101_regcheck_t;
+
+/* Read every register we configured back off the chip and compare. Writing a
+ * register and having it stick are different things, and a half-working SPI
+ * bus reads plausible rubbish. Returns the number of entries written to out;
+ * the caller counts the mismatches. */
+size_t cc1101_verify(const cc1101_hal_t *hal, const cc1101_cfg_t *cfg,
+                     cc1101_regcheck_t *out, size_t cap);
+
+/* PATABLE needs a burst read, so it is not part of cc1101_verify. */
+void cc1101_read_patable(const cc1101_hal_t *hal, uint8_t out[8]);
 
 #ifdef __cplusplus
 }
