@@ -173,6 +173,26 @@ static void cmd_move(const char *buf)
                           millis()));
 }
 
+/* Send a bare My. From a standstill the motor drives to its favourite
+ * position, so this shows where that actually is. Use it only when the shade
+ * is stopped: My on a moving shade just stops it. */
+static void cmd_favourite(const char *buf)
+{
+    int n = -1;
+    if (sscanf(buf + 1, "%d", &n) != 1 || n < 0 || n >= SHADE_COUNT) {
+        Serial.printf("usage: @F<n>, n from 0 to %d\n", SHADE_COUNT - 1);
+        return;
+    }
+    SomfyShade *sh = g_shades[n];
+    if (sh->model.motion != SHADE_MOTION_IDLE) {
+        Serial.printf("Shade %d is moving. My would only stop it. Wait.\n", n);
+        return;
+    }
+    Serial.printf("Shade %d (%s): My from standstill, watch where it parks\n", n,
+                  kShadeNames[n]);
+    somfy_send((uint8_t)n, SOMFY_CMD_MY);
+}
+
 static void cmd_verify(const char *buf)
 {
     (void)buf;
@@ -221,6 +241,8 @@ void setup()
                         cmd_move);
     new SpanUserCommand('R', " - read the CC1101 config back and check it",
                         cmd_verify);
+    new SpanUserCommand('F', "<n> - send My to shade n, to find its favourite",
+                        cmd_favourite);
 }
 
 void loop() { homeSpan.poll(); }
