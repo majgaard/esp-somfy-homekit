@@ -52,7 +52,7 @@
  * To program it: drive the shade to the wanted position with the existing
  * remote, then hold MY for about 5 s until the shade jogs. Do all three, then
  * flip this to true. */
-#define SHADE_CLOSE_USES_FAVOURITE false
+#define SHADE_CLOSE_USES_FAVOURITE true
 
 /* Gap between the Stop and the follow-up My when a close interrupts a move.
  * Must outlast a transmission, which is about 700 ms. */
