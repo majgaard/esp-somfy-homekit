@@ -16,11 +16,18 @@ Before submitting firmware changes, run:
 make -C test/host run
 make -C test/host asan
 pio run -e supermini
+python -m unittest discover -s test/tui -v
 ```
 
 The host tests require only Make and a C11 compiler. The sanitizer target
 requires a compiler with AddressSanitizer and UBSan support. Some restricted
 environments may not support sanitizers; report that explicitly if it happens.
+
+The TUI tests use simulated serial responses, Textual's headless test driver
+and, on POSIX, a pseudo-terminal with the real pySerial transport. They never
+open physical serial devices. Keep credentials out of logs and do not retry
+mutating serial commands automatically. Use `somfy-setup --demo` to inspect
+the interface without hardware.
 
 Keep protocol, radio-register and position logic in the portable C components
 where possible. Add meaningful regression tests for behavior changes. Host

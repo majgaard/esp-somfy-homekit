@@ -8,6 +8,8 @@ its own license and copyright notices.
 | [HomeSpan 2.1.8](https://github.com/HomeSpan/HomeSpan/tree/2.1.8) | HomeKit library, fetched by PlatformIO | [MIT text](LICENSES/HomeSpan-MIT.txt), copyright Gregg E. Berman |
 | [ESPSomfy-RTS](https://github.com/rstrouse/ESPSomfy-RTS) | Reference for RTS framing and measured pulse timings in `components/somfy_rts` | [Unlicense text](LICENSES/ESPSomfy-RTS-Unlicense.txt) |
 | [SmartRC-CC1101-Driver-Lib](https://github.com/LSatan/SmartRC-CC1101-Driver-Lib) | Reference for CC1101 register settings and 433 MHz power table in `components/cc1101` | [MIT text](LICENSES/SmartRC-CC1101-Driver-Lib-MIT.txt), copyright Little Satan (SmartRC) |
+| [Textual](https://github.com/Textualize/textual) | Local terminal user interface, installed by pip | MIT; notice included with the installed package |
+| [pySerial](https://github.com/pyserial/pyserial) | Local USB serial transport, installed by pip | BSD-3-Clause; notice included with the installed package |
 
 HomeSpan's notice is copied from the pinned 2.1.8 package. The other notice
 snapshots were checked against ESPSomfy-RTS commit

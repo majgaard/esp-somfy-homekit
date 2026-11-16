@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "esp-somfy-homekit"
+version = "0.1.0"
+description = "Local terminal setup companion for the Somfy RTS HomeKit bridge"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = ["textual==8.2.8", "pyserial==3.5"]
+
+[project.scripts]
+somfy-setup = "somfy_setup.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["tools"]
+include = ["somfy_setup*"]
+
+[tool.setuptools.package-data]
+somfy_setup = ["*.tcss"]

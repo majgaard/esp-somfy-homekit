@@ -1,5 +1,9 @@
 # Configuration
 
+The [setup app](setup-app.md) provides a form under **Configuration & firmware
+→ Edit installation** for names, addresses, timings and close behavior. It
+preserves other local overrides. The manual equivalent follows.
+
 Copy `include/somfy_config.local.example.h` to `include/somfy_config.local.h`
 and edit the copy. It is ignored by git. The shared defaults remain in
 `include/somfy_config.h`; the local header overrides only settings you define.

@@ -3,6 +3,10 @@
 Follow this guide for a new installation. An already-paired, working bridge
 does not need to be paired again after a normal firmware upload.
 
+For guided setup without typing serial commands, use the
+[local terminal app](setup-app.md). The steps below remain available for
+manual setup and troubleshooting.
+
 ## 1. Configure the installation
 
 Follow the [README](../README.md#quick-start) to install PlatformIO and copy

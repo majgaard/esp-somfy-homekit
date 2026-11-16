@@ -19,6 +19,7 @@ The firmware uses native HomeKit through
   enabled. This is enabled in the reference configuration.
 - Stores rolling codes in ESP32 nonvolatile storage (NVS) before transmitting.
 - Provides serial setup, motor pairing, radio diagnostics and position logging.
+- Includes a local terminal app with guided setup, forms and USB firmware upload.
 
 RTS is one-way: the motor does not acknowledge commands or report position.
 Using another remote, losing an RF command or rebooting during travel can
@@ -59,6 +60,48 @@ Match labels on your module; physical pin order varies.
 Use short SPI wires and fit the module's 433 MHz antenna. Pin assignments
 can be changed in the configuration.
 
+## Terminal setup app
+
+The local TUI connects to the ESP over USB serial. Select your device, fill
+in the setup forms, and follow the pairing wizard. It works with the existing
+firmware and provides shade controls, radio diagnostics, configuration editing
+and firmware upload. Use the mouse or Tab, arrow keys and Enter to navigate.
+
+These screenshots show **demo mode**, which uses example data and never
+opens a serial device, saves configuration or uploads firmware.
+
+![Shade dashboard with live position estimates and pairing controls](docs/images/tui-shades.png)
+
+<details>
+<summary>Guided motor pairing</summary>
+
+The wizard walks you through the existing remote's PROG button and asks you
+to confirm the motor's second jog.
+
+![Motor pairing wizard](docs/images/tui-pairing.png)
+
+</details>
+
+<details>
+<summary>Wi-Fi and Apple Home setup</summary>
+
+Enter network details and a personal HomeKit setup code in masked forms.
+The app handles the serial prompts and hides private output.
+
+![Wi-Fi and HomeKit setup forms](docs/images/tui-network.png)
+
+</details>
+
+<details>
+<summary>Installation configuration</summary>
+
+Edit shade names, travel times, remote addresses and close behavior, then
+build and upload when ready to apply the settings.
+
+![Installation configuration editor](docs/images/tui-configuration.png)
+
+</details>
+
 ## Quick start
 
 1. Clone the repository and enter it:
@@ -78,40 +121,45 @@ can be changed in the configuration.
    python -m pip install -r requirements-dev.txt
    ```
 
-   On Windows, activate with `.venv/Scripts/Activate.ps1` in PowerShell.
+   On Windows, create the environment with `py -3.13 -m venv .venv` and
+   activate with `.venv/Scripts/Activate.ps1` in PowerShell.
    PlatformIO downloads the pinned board platform and libraries on first build.
 
-3. Copy the installation configuration and edit it **before pairing**:
+3. Start the setup app:
 
    ```sh
-   cp include/somfy_config.local.example.h include/somfy_config.local.h
+   somfy-setup
    ```
 
-   Set shade names, travel times and an unused remote address range. With
-   `SHADE_CLOSE_USES_FAVOURITE = true`, every motor must already have its My
-   position set to the position you want HomeKit to call fully closed.
-   [Configuration details](docs/configuration.md) explain the alternatives.
-   An existing installation should retain its current addresses and timings.
+   Select the ESP's USB port. The app works with the existing firmware; no
+   firmware update is required just to use the TUI. Try `somfy-setup --demo`
+   to explore it without connecting hardware.
 
-4. Build, then connect the board and upload:
+4. For a new installation, open **Configuration & firmware → Edit
+   installation**. Set shade names, travel times and an unused remote address
+   range, then **Build & upload**. You can upload to a blank board without
+   connecting first. For an existing installation, retain its addresses and
+   shade order. The editor preserves unrelated local settings such as pins.
 
-   ```sh
-   pio run -e supermini
-   pio run -e supermini -t upload
-   pio device monitor --echo
-   ```
+5. Connect, then use **Wi-Fi & Apple Home** to enter network details and a
+   personal setup code. The app handles serial prompts for you. After Wi-Fi
+   setup the ESP restarts; find its USB port and reconnect. Add **Somfy RTS
+   Bridge** in Apple Home using the code you entered.
 
-5. In the serial console, use `@S` for status and `@R` to verify radio registers.
-   Use `W` to enter Wi-Fi credentials and `S <8-digit-code>` to choose your own
-   HomeKit setup code. Configure one shade at a time with `@P0`, `@P1`, etc.,
-   following the [bring-up guide](docs/bringup.md). Then add the bridge in
-   Apple Home using your setup code.
+6. In **Shades**, run **Radio check**, then use **Pair shade** for each motor.
+   The wizard explains when to hold PROG on the existing remote and asks you
+   to confirm the motor's second jog. Open, close and percentage buttons let
+   you test each shade while watching it.
 
-Keep Wi-Fi credentials in the serial setup, and installation overrides in the
-ignored local header. Close the serial monitor before uploading again.
+The default close mode requires every motor's My favourite to be programmed
+at your chosen closed position. See [configuration details](docs/configuration.md).
+The app stores installation settings in the ignored local header. Wi-Fi
+passwords and setup codes are never written to local files or the activity log.
+Close other serial monitors before connecting.
 
 ## Documentation
 
+- [Terminal setup app](docs/setup-app.md)
 - [Bring-up, motor pairing and troubleshooting](docs/bringup.md)
 - [Configuration, calibration and preserving rolling codes](docs/configuration.md)
 - [Somfy RTS protocol and radio settings](docs/protocol.md)
@@ -127,6 +175,7 @@ with a C compiler and Make:
 ```sh
 make -C test/host run
 make -C test/host asan
+python -m unittest discover -s test/tui -v
 ```
 
 GitHub Actions runs the host tests, AddressSanitizer/UBSan and the firmware
@@ -140,6 +189,7 @@ build. The firmware pins HomeSpan 2.1.8 and pioarduino 55.03.311
 | `components/cc1101` | Radio configuration through an injected SPI/GPIO interface |
 | `src/somfy_radio.cpp` | ESP32 SPI, RMT waveform output and NVS rolling codes |
 | `src/main.cpp` | HomeSpan accessories and serial commands |
+| `tools/somfy_setup` | Local Textual app, serial adapter and configuration editor |
 
 ## License and credits
 

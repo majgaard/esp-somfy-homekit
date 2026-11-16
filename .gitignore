@@ -9,3 +9,5 @@ dependencies.lock
 __pycache__/
 .DS_Store
 include/somfy_config.local.h
+*.egg-info/
+dist/
