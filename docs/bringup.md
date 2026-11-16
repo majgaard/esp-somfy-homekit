@@ -16,6 +16,8 @@ Review the [configuration guide](configuration.md) before operating a motor.
 Choose an unused remote address range before first pairing. Measure travel
 in each direction between the positions you call open and closed. The sample
 17.9 s opening and 17.1 s closing values will not suit every installation.
+Set each shade's individual times and endpoint behavior in the TUI's
+configuration editor, then save and upload the updated firmware.
 
 The default close mode uses My. With your existing remote, verify that every
 motor's My position is where you want HomeKit's **0% open** to be. Consult the

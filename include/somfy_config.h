@@ -51,8 +51,10 @@
 #define SOMFY_REPEATS 4
 #endif
 
-/* Reference installation: 17.9 s from closed to the top dock, 17.1 s from
- * the top to the chosen closed position. Measure both for your own shades. */
+/* Shared defaults: 17.9 s from closed to the top dock, 17.1 s from the top
+ * to the chosen closed position. Optional *_PER_SHADE lists override timing,
+ * favourite mode and limits by accessory index; see shade_settings.h and the
+ * local example. Measure both directions for each motor. */
 #ifndef SHADE_TRAVEL_OPEN_MS
 #define SHADE_TRAVEL_OPEN_MS  17900
 #endif

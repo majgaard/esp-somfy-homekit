@@ -93,7 +93,7 @@ class SetupApp(App):
                         yield Static("Shade names, travel times & close behavior", classes="section-title")
                         yield Static("Edit the installation in a form. Settings are saved to the ignored local "
                                      "configuration and applied when you upload firmware. "
-                                     "All shades currently share the same travel times and limit settings.", classes="intro")
+                                     "Each shade has its own travel times, My-close mode and motor limits.", classes="intro")
                         yield Button("Edit installation…", id="edit-config", variant="primary")
                         yield Static("USB firmware update", classes="section-title")
                         yield Static("Build the current project and upload to the selected USB device. "

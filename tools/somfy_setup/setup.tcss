@@ -34,6 +34,8 @@ Confirm, PairScreen, ConfigScreen { align: center middle; background: #050a12 75
 .dialog Static { height: auto; margin-bottom: 1; }
 .config-dialog { width: 88; }
 #names { height: 6; margin-bottom: 1; }
+#update-shades { margin-bottom: 1; }
+#settings-shade { margin-bottom: 1; }
 .field-row { height: auto; }
 .field-row Input { width: 1fr; margin-right: 1; }
 .switch-row { height: auto; min-height: 3; }

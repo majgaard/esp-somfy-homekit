@@ -1,8 +1,9 @@
 # Configuration
 
 The [setup app](setup-app.md) provides a form under **Configuration & firmware
-→ Edit installation** for names, addresses, timings and close behavior. It
-preserves other local overrides. The manual equivalent follows.
+→ Edit installation** for names, addresses, timings and close behavior. Choose
+a shade under **Settings for this shade** to change its individual settings.
+It preserves other local overrides. The manual equivalent follows.
 
 Copy `include/somfy_config.local.example.h` to `include/somfy_config.local.h`
 and edit the copy. It is ignored by git. The shared defaults remain in
@@ -32,10 +33,32 @@ as fully closed. These are reference settings, not automatic calibration.
 | `PIN_SCK/MISO/MOSI/CSN/GDO0` | `4/5/6/7/10` | SPI and envelope GPIOs |
 | `PIN_GDO2` | `3` | Reserved; unused by this firmware |
 
-Travel times, limits and favourite mode apply to all shades. There is no
-per-shade timing configuration. The validated setup has three shades; other
-counts need hardware testing. Keep accessory order stable after HomeKit
-pairing: order determines accessory identities and remote addresses.
+The scalar timing, limit and favourite settings above are shared defaults.
+Optional per-shade lists override them independently, in accessory order:
+
+```c
+#define SHADE_TRAVEL_OPEN_MS_PER_SHADE { 17900, 22000, 30000 }
+#define SHADE_TRAVEL_CLOSE_MS_PER_SHADE { 17100, 21000, 28500 }
+#define SHADE_CLOSE_USES_FAVOURITE_PER_SHADE { true, false, true }
+#define SHADE_OPEN_IS_HARD_LIMIT_PER_SHADE { true, true, true }
+#define SHADE_CLOSE_IS_HARD_LIMIT_PER_SHADE { false, true, false }
+```
+
+Every list supplied must have exactly `SHADE_COUNT` entries. Omit any list
+to keep using its shared default for all shades. In this example the middle
+shade closes to its physical motor limit; the others close to their My
+positions. Stop lead and favourite delay remain shared settings.
+
+The TUI imports an older configuration by copying the shared values to every
+shade, then saves explicit lists when edited. It does not change motor
+addresses, rolling codes or HomeKit identities when changing timings.
+Per-shade settings require firmware containing `shade_settings.h`; saving a
+header alone cannot change an older firmware running on the ESP. Use **Build
+& upload** after saving.
+
+The validated physical setup has three shades; other counts need hardware
+testing. Keep accessory order stable after HomeKit pairing: order determines
+accessory identities, remote addresses and which settings apply to each motor.
 
 For a single shade, for example:
 
@@ -52,7 +75,7 @@ counters will conflict. Keep addresses unchanged after pairing.
 
 ## Choosing the closed position
 
-With `SHADE_CLOSE_USES_FAVOURITE = true`, HomeKit **0% open** means the motor's
+With a shade's favourite-close flag enabled, HomeKit **0% open** means its motor's
 My position, which can be above its physical bottom limit. The motor must
 already have that favourite programmed. Closing from a standstill sends My;
 interrupting an estimated move sends Stop, waits, then sends My. A new target
@@ -62,8 +85,8 @@ Intermediate moves still use a direction command followed by a timed Stop.
 Percentages are estimates even when the motor manages its final stop at My.
 There is no sensor or acknowledgement confirming arrival.
 
-If My should not be your closed position, set the flag to `false` and choose
-`SHADE_CLOSE_IS_HARD_LIMIT` to match the motor:
+If My should not be a shade's closed position, turn off its favourite-close
+flag and choose its closed hard-limit setting to match the motor:
 
 - `true`: the motor has an end stop exactly at your desired closed position.
 - `false`: the firmware sends a timed Stop. A lost Stop can let the motor run

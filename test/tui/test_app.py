@@ -4,9 +4,10 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from textual.widgets import Button, Input, Static, TabbedContent, TextArea
+from textual.widgets import Button, Input, Select, Static, Switch, TabbedContent, TextArea
 
 from somfy_setup.app import SetupApp
+from somfy_setup.config import Installation
 from somfy_setup.screens import ConfigScreen, Confirm, PairScreen
 
 
@@ -72,9 +73,41 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
                     await pilot.pause()
                     await pilot.click("#edit-config")
                     app.screen.query_one("#open-time", Input).value = "20.5"
+                    app.screen.query_one("#settings-shade", Select).value = 1
+                    await pilot.pause()
+                    app.screen.query_one("#close-time", Input).value = "22"
+                    app.screen.query_one("#favourite-mode", Switch).value = False
                     app.screen.on_button_pressed(Button.Pressed(app.screen.query_one("#save-config", Button)))
                     await pilot.pause()
-                    self.assertIn("#define SHADE_TRAVEL_OPEN_MS 20500", (project / "include/somfy_config.local.h").read_text())
+                    loaded = Installation.load(project)
+                    self.assertEqual([s.open_ms for s in loaded.shades], [20500, 17900, 17900])
+                    self.assertEqual([s.close_ms for s in loaded.shades], [17100, 22000, 17100])
+                    self.assertEqual([s.favourite for s in loaded.shades], [True, False, True])
+
+    async def test_switching_shades_preserves_times_flags_and_rejects_invalid_edits(self):
+        app = SetupApp(PROJECT, demo=True)
+        async with app.run_test(size=(120, 60)) as pilot:
+            await pilot.pause()
+            app.push_screen(ConfigScreen(PROJECT, Installation.load(PROJECT), demo=True))
+            await pilot.pause()
+            screen = app.screen
+            screen.query_one("#open-time", Input).value = "22.5"
+            screen.query_one("#favourite-mode", Switch).value = False
+            screen.query_one("#settings-shade", Select).value = 1
+            await pilot.pause()
+            self.assertEqual(screen.query_one("#open-time", Input).value, "17.9")
+            self.assertTrue(screen.query_one("#favourite-mode", Switch).value)
+            screen.query_one("#close-time", Input).value = "25"
+            screen.query_one("#settings-shade", Select).value = 0
+            await pilot.pause()
+            self.assertEqual(screen.query_one("#open-time", Input).value, "22.5")
+            self.assertFalse(screen.query_one("#favourite-mode", Switch).value)
+            self.assertEqual(screen.config.shades[1].close_ms, 25000)
+            screen.query_one("#open-time", Input).value = "invalid"
+            screen.query_one("#settings-shade", Select).value = 2
+            await pilot.pause()
+            self.assertEqual(screen.current_index, 0)
+            self.assertEqual(screen.query_one("#open-time", Input).value, "invalid")
 
     async def test_narrow_terminal_and_disconnected_controls(self):
         app = SetupApp(PROJECT)

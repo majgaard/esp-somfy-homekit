@@ -1,4 +1,5 @@
-"""Edit literal installation settings while preserving unrelated local overrides."""
+"""Edit installation settings while preserving unrelated local overrides."""
+from copy import deepcopy
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -6,9 +7,7 @@ import re
 
 
 @dataclass
-class Installation:
-    names: list[str]
-    address: int
+class ShadeSettings:
     open_ms: int
     close_ms: int
     favourite: bool
@@ -16,48 +15,102 @@ class Installation:
     close_limit: bool
 
     def validate(self):
+        if not 100 <= self.open_ms <= 600000 or not 100 <= self.close_ms <= 600000:
+            raise ValueError("Travel times must be between 0.1 and 600 seconds.")
+
+
+# Order is shared by the header's lists, the editor and the loader.
+SETTING_KEYS = {
+    "open_ms": "SHADE_TRAVEL_OPEN_MS",
+    "close_ms": "SHADE_TRAVEL_CLOSE_MS",
+    "favourite": "SHADE_CLOSE_USES_FAVOURITE",
+    "open_limit": "SHADE_OPEN_IS_HARD_LIMIT",
+    "close_limit": "SHADE_CLOSE_IS_HARD_LIMIT",
+}
+
+
+@dataclass
+class Installation:
+    names: list[str]
+    address: int
+    defaults: ShadeSettings
+    shades: list[ShadeSettings]
+
+    def resize(self, names):
+        if not 1 <= len(names) <= 255:
+            raise ValueError("Enter between 1 and 255 shade names, one per line.")
+        self.shades = [self.shades[i] if i < len(self.shades) else deepcopy(self.defaults)
+                       for i in range(len(names))]
+        self.names = names[:]
+
+    def validate(self):
         if not 1 <= len(self.names) <= 255:
             raise ValueError("Enter between 1 and 255 shade names, one per line.")
         if any(not name.strip() or any(ord(c) < 32 for c in name) for name in self.names):
             raise ValueError("Shade names must be nonempty and contain no control characters.")
+        if len(self.names) != len(self.shades):
+            raise ValueError("Each shade must have its own settings.")
         if not 1 <= self.address <= 0xFFFFFF - len(self.names) + 1:
             raise ValueError("Choose a nonzero 24-bit address range that fits all shades.")
-        if not 100 <= self.open_ms <= 600000 or not 100 <= self.close_ms <= 600000:
-            raise ValueError("Travel times must be between 0.1 and 600 seconds.")
+        for name, shade in zip(self.names, self.shades):
+            try:
+                shade.validate()
+            except ValueError as error:
+                raise ValueError(f"{name}: {error}") from error
 
     @classmethod
     def load(cls, project: Path):
-        defaults = project / "include/somfy_config.h"
-        if not defaults.exists():
+        defaults_path = project / "include/somfy_config.h"
+        if not defaults_path.exists():
             raise ValueError("Select the firmware repository with --project to edit configuration.")
         local = project / "include/somfy_config.local.h"
         values = {}
-        for text in [defaults.read_text(encoding="utf-8"), local.read_text(encoding="utf-8") if local.exists() else ""]:
-            values.update(re.findall(r"^\s*#define\s+(\w+)\s+([^\n]+)", text, re.M))
+        for text in [defaults_path.read_text(encoding="utf-8"),
+                     local.read_text(encoding="utf-8") if local.exists() else ""]:
+            text = re.sub(r"\\\r?\n", " ", text)
+            values.update(re.findall(r"^[ \t]*#define[ \t]+(\w+)[ \t]+([^\n]+)", text, re.M))
 
         def value(key):
             return re.sub(r'"(?:\\.|[^"\\])*"|/\*.*?\*/|//.*',
                           lambda match: match[0] if match[0].startswith('"') else "",
                           values[key]).strip()
 
-        def number(key):
-            return int(re.sub(r"[uUlL]+$", "", value(key)), 0)
+        def number(raw):
+            return int(re.sub(r"[uUlL]+$", "", raw), 0)
 
-        def boolean(key):
-            raw = value(key)
+        def boolean(raw):
             if raw not in {"true", "false", "1", "0"}:
-                raise ValueError(f"{key} must be a literal true or false for the editor.")
+                raise ValueError("Flags must be a literal true or false.")
             return raw in {"true", "1"}
 
+        def initializer(key):
+            raw = value(key)
+            if not raw.startswith("{") or not raw.endswith("}"):
+                raise ValueError(f"{key} must be a literal initializer enclosed in braces.")
+            return raw[1:-1]
+
         try:
-            names = json.loads("[" + value("SHADE_NAMES").strip()[1:-1] + "]")
+            names = json.loads("[" + initializer("SHADE_NAMES") + "]")
             if not all(isinstance(name, str) for name in names):
                 raise ValueError("Names must be strings.")
-            if len(names) != number("SHADE_COUNT"):
+            if len(names) != number(value("SHADE_COUNT")):
                 raise ValueError("SHADE_NAMES and SHADE_COUNT disagree.")
-            config = cls(names, number("SOMFY_ADDR_BASE"), number("SHADE_TRAVEL_OPEN_MS"),
-                         number("SHADE_TRAVEL_CLOSE_MS"), boolean("SHADE_CLOSE_USES_FAVOURITE"),
-                         boolean("SHADE_OPEN_IS_HARD_LIMIT"), boolean("SHADE_CLOSE_IS_HARD_LIMIT"))
+            shared = ShadeSettings(**{field: (number if field.endswith("_ms") else boolean)(value(key))
+                                      for field, key in SETTING_KEYS.items()})
+            shades = [deepcopy(shared) for _ in names]
+            for field, key in SETTING_KEYS.items():
+                per_shade_key = key + "_PER_SHADE"
+                if per_shade_key not in values:
+                    continue
+                entries = [entry.strip() for entry in initializer(per_shade_key).split(",")]
+                if entries and entries[-1] == "":
+                    entries.pop()  # C allows a trailing comma.
+                if len(entries) != len(names):
+                    raise ValueError(f"{per_shade_key} must have exactly {len(names)} entries.")
+                parse = number if field.endswith("_ms") else boolean
+                for shade, entry in zip(shades, entries):
+                    setattr(shade, field, parse(entry))
+            config = cls(names, number(value("SOMFY_ADDR_BASE")), shared, shades)
             config.validate()
             return config
         except (KeyError, TypeError, ValueError) as error:
@@ -71,22 +124,21 @@ class Installation:
             "SHADE_COUNT": str(len(self.names)),
             "SHADE_NAMES": "{ " + ", ".join(json.dumps(n, ensure_ascii=False) for n in self.names) + " }",
             "SOMFY_ADDR_BASE": f"0x{self.address:06X}u",
-            "SHADE_TRAVEL_OPEN_MS": str(self.open_ms),
-            "SHADE_TRAVEL_CLOSE_MS": str(self.close_ms),
-            "SHADE_CLOSE_USES_FAVOURITE": str(self.favourite).lower(),
-            "SHADE_OPEN_IS_HARD_LIMIT": str(self.open_limit).lower(),
-            "SHADE_CLOSE_IS_HARD_LIMIT": str(self.close_limit).lower(),
         }
+        for field, key in SETTING_KEYS.items():
+            def literal(value):
+                return str(value).lower() if isinstance(value, bool) else str(value)
+            # Keep the legacy shared defaults, so newly added shades inherit them.
+            values[key] = literal(getattr(self.defaults, field))
+            values[key + "_PER_SHADE"] = "{ " + ", ".join(literal(getattr(s, field)) for s in self.shades) + " }"
         for key, value in values.items():
-            pattern = rf"^[ \t]*#define[ \t]+{key}[ \t]+[^\n]*"
+            pattern = rf"^[ \t]*#define[ \t]+{key}[ \t]+(?:[^\n]*\\\n)*[^\n]*"
             if re.search(pattern, text, re.M):
                 text = re.sub(pattern, lambda _: f"#define {key} {value}", text, flags=re.M)
             else:
-                # Put overrides inside an existing include guard, if there is one.
                 end = list(re.finditer(r"^[ \t]*#endif\b", text, re.M))
                 offset = end[-1].start() if end else len(text)
                 text = text[:offset].rstrip() + f"\n#define {key} {value}\n" + text[offset:]
-        # Refuse to overwrite through a symlink and replace the file atomically.
         if path.is_symlink():
             raise ValueError("The local configuration is a symlink; edit it directly.")
         temporary = path.with_suffix(".h.tmp")

@@ -95,8 +95,8 @@ The app handles the serial prompts and hides private output.
 <details>
 <summary>Installation configuration</summary>
 
-Edit shade names, travel times, remote addresses and close behavior, then
-build and upload when ready to apply the settings.
+Edit shade names and remote addresses, and set travel times and close behavior
+for each shade. Build and upload when ready to apply the settings.
 
 ![Installation configuration editor](docs/images/tui-configuration.png)
 
@@ -136,8 +136,9 @@ build and upload when ready to apply the settings.
    to explore it without connecting hardware.
 
 4. For a new installation, open **Configuration & firmware → Edit
-   installation**. Set shade names, travel times and an unused remote address
-   range, then **Build & upload**. You can upload to a blank board without
+   installation**. Set shade names and an unused remote address range. Select
+   each shade to enter its opening/closing times, My-close mode and motor
+   limits, then **Build & upload**. You can upload to a blank board without
    connecting first. For an existing installation, retain its addresses and
    shade order. The editor preserves unrelated local settings such as pins.
 

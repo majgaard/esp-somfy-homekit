@@ -96,8 +96,19 @@ for normal percentage moves.
 ## Configuration and USB upload
 
 **Edit installation** reads the shared defaults plus your local overrides.
-It edits shade names/count, the address base, travel times, favourite close
-and motor limits. Other local defines, such as pin assignments and transmit
+Edit shade names/count and click **Update shade list** after adding or removing
+names. Under **Settings for this shade**, choose a shade and enter its opening
+and closing times, My-close mode and motor limits. Switching shades keeps your
+edits in memory; **Save configuration** saves them all together. Invalid travel
+times must be corrected before switching, so they are not silently lost.
+
+Older installations with shared settings are imported by giving each shade
+the same existing values. Changing one shade does not change the others.
+Added shades start with the shared defaults. Settings follow accessory order;
+do not reorder names on an already-paired bridge.
+
+The address base remains shared; each shade uses base plus its index. Other
+local defines, such as pin assignments and transmit
 settings, are preserved. The editor accepts literal values; it refuses to
 guess the result of custom C expressions.
 

@@ -10,6 +10,7 @@
 
 #include "shade_ctl.h"
 #include "somfy_config.h"
+#include "shade_settings.h"
 #include "somfy_radio.h"
 
 static const char *kShadeNames[] = SHADE_NAMES;
@@ -46,14 +47,7 @@ struct SomfyShade : Service::WindowCovering {
 
     explicit SomfyShade(uint8_t i) : idx(i)
     {
-        shade_cfg_t cfg = {};
-        cfg.travel_open_ms      = SHADE_TRAVEL_OPEN_MS;
-        cfg.travel_close_ms     = SHADE_TRAVEL_CLOSE_MS;
-        cfg.open_is_hard_limit  = SHADE_OPEN_IS_HARD_LIMIT;
-        cfg.close_is_hard_limit = SHADE_CLOSE_IS_HARD_LIMIT;
-        cfg.stop_lead_ms          = SHADE_STOP_LEAD_MS;
-        cfg.close_uses_favourite  = SHADE_CLOSE_USES_FAVOURITE;
-        cfg.favourite_delay_ms    = SHADE_FAVOURITE_DELAY_MS;
+        shade_cfg_t cfg = somfy_settings::for_shade(i);
         /* Restore from the stored target. We cannot know where the shade
          * really sits at boot, so this is a guess either way, and calibrated
          * stays false until a travel reaches a limit. */
