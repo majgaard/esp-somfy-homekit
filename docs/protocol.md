@@ -1,9 +1,9 @@
 # Somfy RTS 56-bit protocol
 
 Source of truth: [rstrouse/ESPSomfy-RTS](https://github.com/rstrouse/ESPSomfy-RTS),
-`Somfy.cpp`, functions `somfy_frame_t::encodeFrame` (line 333) and
-`Transceiver::sendFrame` (line 4310). That project is under the Unlicense, so
-we can reuse the constants freely.
+`Somfy.cpp`, functions `somfy_frame_t::encodeFrame` and
+`Transceiver::sendFrame`. That project is under the Unlicense; see the
+[third-party notices](../THIRD_PARTY_NOTICES.md).
 
 ## Radio
 

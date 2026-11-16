@@ -5,3 +5,7 @@ managed_components/
 dependencies.lock
 .context/
 .pio/
+.venv/
+__pycache__/
+.DS_Store
+include/somfy_config.local.h

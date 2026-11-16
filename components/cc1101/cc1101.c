@@ -1,3 +1,5 @@
+/* Register settings and power table reference SmartRC-CC1101-Driver-Lib.
+ * See THIRD_PARTY_NOTICES.md and LICENSES/SmartRC-CC1101-Driver-Lib-MIT.txt. */
 #include "cc1101.h"
 
 uint32_t cc1101_freq_word(uint32_t freq_hz, uint32_t xosc_hz)

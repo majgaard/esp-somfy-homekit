@@ -19,7 +19,7 @@ SRC := main.c test_somfy_rts.c test_shade_ctl.c test_cc1101.c \
        $(ROOT)/components/shade_ctl/shade_ctl.c \
        $(ROOT)/components/cc1101/cc1101.c
 
-DEPS := $(SRC) test_util.h
+DEPS := $(SRC) test_util.h $(wildcard $(ROOT)/components/*/include/*.h)
 
 .PHONY: run asan clean
 run: build/tests

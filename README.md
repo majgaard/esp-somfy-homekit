@@ -1,104 +1,152 @@
-# esp-somfy-matter
+# Somfy RTS HomeKit Bridge
 
-Smart-home bridge for three Somfy RTS roller shades, on an ESP32-C3 with a
-CC1101 transceiver.
+Control Somfy RTS roller shades from Apple Home and Siri using an ESP32-C3
+and a CC1101 radio. One HomeKit bridge exposes one Window Covering tile per
+shade, with open, close and percentage controls.
 
-Protocol work is based on [ESPSomfy-RTS](https://github.com/rstrouse/ESPSomfy-RTS)
-(Unlicense). See [docs/protocol.md](docs/protocol.md).
+The reference installation controls three shades and has run reliably for
+several months. Other boards and motor models need their own hardware testing.
 
-Apple Home only, over native HAP. We dropped Matter: a 4 MB ESP32-C3 leaves no
-room for OTA alongside it, and test-certificate attestation against Apple Home
-is unreliable. Native HAP needs no certificates and fits with room to spare.
+The firmware uses native HomeKit through
+[HomeSpan](https://github.com/HomeSpan/HomeSpan/tree/2.1.8).
 
-## Status
+## Features and limitations
 
-| Part | State |
-| --- | --- |
-| `components/somfy_rts` — frame encode/decode, OOK envelope | done, tested on host |
-| `components/shade_ctl` — position model, HomeKit conversion | done, tested on host |
-| `components/cc1101` — register map, config, OOK setup | done, tested on host with a mock SPI |
-| `src/somfy_radio.cpp` — SPI glue, RMT envelope, rolling codes in NVS | RMT path verified on hardware; CC1101 path untested |
-| `src/main.cpp` — HomeSpan bridge, three Window Covering tiles | runs on hardware, HAP database validates clean |
+- Transmits Somfy RTS 56-bit commands at 433.42 MHz.
+- Exposes separate shade tiles behind a single HomeKit pairing.
+- Estimates intermediate positions from measured opening and closing times.
+- Uses each motor's programmed **My favourite as the closed position**, when
+  enabled. This is enabled in the reference configuration.
+- Stores rolling codes in ESP32 nonvolatile storage (NVS) before transmitting.
+- Provides serial setup, motor pairing, radio diagnostics and position logging.
 
-The three components need no hardware. The `src/` layer needs the board.
-
-## Requirements
-
-- **An Apple Home Hub** — a HomePod or an Apple TV. HomeSpan does not support
-  use without one. This is an Apple rule for HomeKit accessories, not a
-  HomeSpan limit.
-- PlatformIO. The official `platformio/espressif32` platform still ships
-  Arduino-ESP32 Core 2.x, and HomeSpan 2.1.8 needs 3.3.0 or later, so
-  `platformio.ini` pins the [pioarduino](https://github.com/pioarduino/platform-espressif32)
-  fork instead.
-
-## Build
-
-```
-pio run              # firmware
-pio run -t upload    # flash over USB-C
-pio device monitor   # console; @S for status, @P<n> to pair shade n
-```
-
-See [docs/bringup.md](docs/bringup.md) for the order to do things in once the
-CC1101 arrives.
-
-## Test
-
-```
-make -C test/host run
-```
-
-27 tests, no ESP-IDF and no toolchain beyond a C compiler. `make -C test/host asan`
-adds the sanitizers; run that one from a normal terminal, because ASan binaries
-hang under some sandboxed shells.
-
-## HomeKit library
-
-[HomeSpan](https://github.com/HomeSpan/HomeSpan) (MIT). Espressif's
-`esp-homekit-sdk` is the obvious alternative and is native ESP-IDF C, but it
-carries **no LICENSE file anywhere in the repository**, has no releases, and
-last saw a commit in February 2026. HomeSpan is MIT, actively maintained, and
-supports the ESP32-C3.
-
-The cost is the Arduino layer. Our three components are framework-neutral C
-with no Arduino and no ESP-IDF headers, so they compile either way.
+RTS is one-way: the motor does not acknowledge commands or report position.
+Using another remote, losing an RF command or rebooting during travel can
+leave the displayed position out of sync. The firmware does not receive RF,
+detect obstacles or implement tilt control. Updates use USB; OTA is not enabled.
 
 ## Hardware
 
-- ESP32-C3 SuperMini (board marking HW-466AB), 4 MB flash, Wi-Fi only.
-- CC1101 module, 387-464 MHz variant, tuned to 433.42 MHz. **3.3 V only.**
-
-Planned wiring. The ESP32-C3 has a GPIO matrix, so these are all free choices
-and become Kconfig options.
-
-| CC1101 | ESP32-C3 | Note |
+| Part | Requirements | Purchase link |
 | --- | --- | --- |
-| VCC | 3V3 | never 5 V |
-| GND | GND | |
-| SCK | GPIO4 | |
-| MISO (SO) | GPIO5 | |
-| MOSI (SI) | GPIO6 | |
-| CSN | GPIO7 | |
-| GDO0 | GPIO10 | RMT transmit, the OOK envelope |
-| GDO2 | GPIO3 | receive, later |
+| ESP controller | ESP32-C3 SuperMini (HW-466AB), 4 MB flash | [ESP controllers on Amazon](https://link.amazon/B07y2Re5L) |
+| Radio transmitter | CC1101 module suitable for 433 MHz, with an antenna | [Radio transmitter on Amazon](https://link.amazon/B02TUnFFw) |
+| Jumper wires | Short leads for power, SPI and GDO0 | [Wires on Amazon](https://link.amazon/B0h8Fonvl) |
+| USB cable | USB data cable suitable for your board | |
 
-Avoid GPIO2, 8 and 9 (strapping and the onboard LED), 18 and 19 (USB), and
-20 and 21 (UART).
+The Amazon links above are affiliate links. As an Amazon Associate I earn
+from qualifying purchases.
 
-## Design
+You also need Somfy RTS roller shades, an existing paired remote with a PROG
+button, a 2.4 GHz Wi-Fi network, and an Apple Home Hub (HomePod or Apple TV).
+Somfy io-homecontrol motors use a different protocol and are unsupported.
+[HomeSpan does not support operation without a Home Hub](https://github.com/HomeSpan/HomeSpan/blob/2.1.8/README.md#requirements).
 
-`somfy_rts` and `shade_ctl` hold no radio, no clock and no ESP-IDF headers.
-They are pure logic, so the host tests cover the parts that are hard to debug
-over the air. The radio driver and the smart-home layer sit above them.
+Disconnect power before wiring. **Power the CC1101 from 3.3 V, never 5 V.**
+Match labels on your module; physical pin order varies.
 
-`shade_ctl` holds position in hundredths of a percent, 0 = fully open, 10000 =
-fully closed.
+| CC1101 | ESP32-C3 SuperMini |
+| --- | --- |
+| VCC | 3V3 |
+| GND | GND |
+| SCK / SCLK | GPIO4 |
+| MISO / SO / GDO1 | GPIO5 |
+| MOSI / SI | GPIO6 |
+| CSN / CS / SS | GPIO7 |
+| GDO0 | GPIO10 |
+| GDO2 | Unconnected; receive is not implemented |
 
-**HomeKit counts the opposite way**: whole percent, 100 = fully open, 0 = fully
-closed. Every value that crosses that boundary goes through
-`shade_to_hk_position` and `shade_from_hk_position`. Both directions are tested.
+Use short SPI wires and fit the module's 433 MHz antenna. Pin assignments
+can be changed in the configuration.
 
-A move to an intermediate position ends with a `Stop`. A move to fully open or
-fully closed does not: the motor stops at its own hard limit, which re-syncs
-the estimate against reality. Only a full travel sets `calibrated`.
+## Quick start
+
+1. Clone the repository and enter it:
+
+   ```sh
+   git clone https://github.com/majgaard/esp-somfy-homekit.git
+   cd esp-somfy-homekit
+   ```
+
+2. Install the build tools in a virtual environment using Python 3.13.
+   See [troubleshooting](docs/bringup.md#troubleshooting) if macOS dependency
+   installation crashes.
+
+   ```sh
+   python3.13 -m venv .venv
+   source .venv/bin/activate
+   python -m pip install -r requirements-dev.txt
+   ```
+
+   On Windows, activate with `.venv/Scripts/Activate.ps1` in PowerShell.
+   PlatformIO downloads the pinned board platform and libraries on first build.
+
+3. Copy the installation configuration and edit it **before pairing**:
+
+   ```sh
+   cp include/somfy_config.local.example.h include/somfy_config.local.h
+   ```
+
+   Set shade names, travel times and an unused remote address range. With
+   `SHADE_CLOSE_USES_FAVOURITE = true`, every motor must already have its My
+   position set to the position you want HomeKit to call fully closed.
+   [Configuration details](docs/configuration.md) explain the alternatives.
+   An existing installation should retain its current addresses and timings.
+
+4. Build, then connect the board and upload:
+
+   ```sh
+   pio run -e supermini
+   pio run -e supermini -t upload
+   pio device monitor --echo
+   ```
+
+5. In the serial console, use `@S` for status and `@R` to verify radio registers.
+   Use `W` to enter Wi-Fi credentials and `S <8-digit-code>` to choose your own
+   HomeKit setup code. Configure one shade at a time with `@P0`, `@P1`, etc.,
+   following the [bring-up guide](docs/bringup.md). Then add the bridge in
+   Apple Home using your setup code.
+
+Keep Wi-Fi credentials in the serial setup, and installation overrides in the
+ignored local header. Close the serial monitor before uploading again.
+
+## Documentation
+
+- [Bring-up, motor pairing and troubleshooting](docs/bringup.md)
+- [Configuration, calibration and preserving rolling codes](docs/configuration.md)
+- [Somfy RTS protocol and radio settings](docs/protocol.md)
+- [Contributing and testing](CONTRIBUTING.md)
+- [Security reporting](SECURITY.md)
+
+## Development
+
+The protocol encoder, position model and CC1101 register driver are portable
+C components. They have no Arduino or ESP-IDF dependencies and can be tested
+with a C compiler and Make:
+
+```sh
+make -C test/host run
+make -C test/host asan
+```
+
+GitHub Actions runs the host tests, AddressSanitizer/UBSan and the firmware
+build. The firmware pins HomeSpan 2.1.8 and pioarduino 55.03.311
+(Arduino-ESP32 3.3.11). Keep these pins when reproducing a build.
+
+| Path | Purpose |
+| --- | --- |
+| `components/somfy_rts` | Frame encoding/decoding and OOK pulse generation |
+| `components/shade_ctl` | Time-based position estimates and HomeKit conversion |
+| `components/cc1101` | Radio configuration through an injected SPI/GPIO interface |
+| `src/somfy_radio.cpp` | ESP32 SPI, RMT waveform output and NVS rolling codes |
+| `src/main.cpp` | HomeSpan accessories and serial commands |
+
+## License and credits
+
+[MIT](LICENSE). Protocol timings and framing are based on
+[ESPSomfy-RTS](https://github.com/rstrouse/ESPSomfy-RTS) (Unlicense); CC1101
+settings and power values follow
+[SmartRC-CC1101-Driver-Lib](https://github.com/LSatan/SmartRC-CC1101-Driver-Lib)
+(MIT). HomeKit support comes from HomeSpan (MIT). See
+[third-party notices](THIRD_PARTY_NOTICES.md) for license texts and framework
+licensing. This is an independent project, unaffiliated with Somfy or Apple.

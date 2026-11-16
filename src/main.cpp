@@ -1,8 +1,8 @@
 /*
- * HomeKit bridge for three Somfy RTS roller shades.
+ * HomeKit bridge for Somfy RTS roller shades.
  *
  * One bridge accessory plus one Window Covering accessory per shade, so the
- * Home app shows three tiles behind a single pairing code.
+ * Home app shows a tile per shade behind a single pairing code.
  */
 #include <Arduino.h>
 
@@ -12,11 +12,9 @@
 #include "somfy_config.h"
 #include "somfy_radio.h"
 
-static const char *kShadeNames[SHADE_COUNT] = {
-    "Left Shade",
-    "Middle Shade",
-    "Right Shade",
-};
+static const char *kShadeNames[] = SHADE_NAMES;
+static_assert(sizeof(kShadeNames) / sizeof(kShadeNames[0]) == SHADE_COUNT,
+              "SHADE_NAMES must contain exactly SHADE_COUNT names");
 
 static const char *motion_name(uint8_t hk_state)
 {

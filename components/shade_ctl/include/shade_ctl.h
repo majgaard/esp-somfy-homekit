@@ -73,9 +73,9 @@ typedef struct {
      * standstill: the motor drives itself there and stops itself, so there is
      * no timing on our side and no Stop to lose in the air.
      *
-     * This also makes every failure safe. A mistimed or duplicated My sends
-     * the shade to the favourite, which is exactly where we wanted it, rather
-     * than letting it run on into whatever is below.
+     * RTS has no acknowledgements. Ordering assumes the motor's motion agrees
+     * with the estimate; a lost command or an external remote can break that
+     * assumption.
      *
      * Implies close_is_hard_limit, and shade_init enforces that. */
     bool close_uses_favourite;
